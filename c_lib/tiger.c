@@ -698,6 +698,7 @@ static const uint64_t table[4*256] = {
 
 #define TIGER_BLOCK_BITS 512
 #define TIGER_BLOCK_SIZE (TIGER_BLOCK_BITS/8)
+#define TIGER_BLOCK_WSIZE (TIGER_BLOCK_BITS/64)
 
 #define INIT_A _ULL(0x0123456789ABCDEF)
 #define INIT_B _ULL(0xFEDCBA9876543210)
@@ -706,23 +707,26 @@ static const uint64_t table[4*256] = {
 struct tiger_context_s {
     uint64_t a,b,c;
     uint64_t bits;
-    uint8_t  pending[TIGER_BLOCK_SIZE];
+    union {
+        uint64_t words[TIGER_BLOCK_WSIZE];
+        uint8_t  bytes[TIGER_BLOCK_SIZE];
+    } pending;
 };
 
+size_t tiger_context_size() { return sizeof(tiger_context); }
+
 tiger_context *tiger_new() {
+    /* XXX: maintain in sync with Data.Digest.TigerHash.Internal */
     tiger_context *ctx = (tiger_context*)malloc(sizeof(tiger_context));
-    ctx->bits = _ULL(0),
-    ctx->a = INIT_A,
-    ctx->b = INIT_B,
-    ctx->c = INIT_C;
+    tiger_reset(ctx);
     return ctx;
 }
 
 void tiger_reset(tiger_context *ctx) {
     ctx->bits = _ULL(0),
-    ctx->a = _ULL(0x0123456789ABCDEF),
-    ctx->b = _ULL(0xFEDCBA9876543210),
-    ctx->c = _ULL(0xF096A5B4C3B2E187);
+    ctx->a = INIT_A,
+    ctx->b = INIT_B,
+    ctx->c = INIT_C;
 }
 
 void tiger_free(tiger_context *ctx) {
@@ -741,19 +745,19 @@ void tiger_update(tiger_context *ctx, const void *block, size_t bits_count)
     if ((pending_bits > 0) || (bits_count < TIGER_BLOCK_BITS)) {
         const size_t align_bits = TIGER_BLOCK_BITS-pending_bits;
         if (align_bits > bits_count) {
-            memcpy(ctx->pending + pending_bits/8, block, bits_count/8);
+            memcpy(ctx->pending.bytes + pending_bits/8, block, bits_count/8);
             ctx->bits += bits_count;
             return;
         }
-        memcpy(ctx->pending + pending_bits/8, block, align_bits/8);
+        memcpy(ctx->pending.bytes + pending_bits/8, block, align_bits/8);
         ctx->bits += align_bits,
         block = (const uint8_t*)block + align_bits/8,
         bits_count -= align_bits;
 #ifdef TIGER_BIG_ENDIAN
         for(i=0;i<TIGER_BLOCK_BITS/64;++i)
-            ((uint64_t*)ctx->pending)[i] = bswap_64(((uint64_t*)ctx->pending)[i]);
+            (ctx->pending.words)[i] = bswap_64((ctx->pending.words)[i]);
 #endif
-        tiger_compress_macro((const uint64_t*)(ctx->pending), ctx->a, ctx->b, ctx->c);
+        tiger_compress_macro(ctx->pending.words, ctx->a, ctx->b, ctx->c);
     }
 
     ctx->bits += bits_count;
@@ -761,8 +765,8 @@ void tiger_update(tiger_context *ctx, const void *block, size_t bits_count)
     while( bits_count >= TIGER_BLOCK_BITS )  {
 #ifdef TIGER_BIG_ENDIAN
         for(i=0;i<TIGER_BLOCK_SIZE;++i)
-            ctx->pending[i^7] = ((const uint8_t*)block)[i];
-        tiger_compress_macro((const uint64_t*)(ctx->pending), ctx->a, ctx->b, ctx->c);
+            ctx->pending.bytes[i^7] = ((const uint8_t*)block)[i];
+        tiger_compress_macro(ctx->pending.words, ctx->a, ctx->b, ctx->c);
 #else
         tiger_compress_macro((const uint64_t*)block, ctx->a, ctx->b, ctx->c);
 #endif
@@ -770,7 +774,7 @@ void tiger_update(tiger_context *ctx, const void *block, size_t bits_count)
         bits_count -= TIGER_BLOCK_BITS;
     }
 
-    memcpy(ctx->pending, block, bits_count/8);
+    memcpy(ctx->pending.bytes, block, bits_count/8);
 }
 
 void tiger_finalize(tiger_context *ctx, void *hash) {
@@ -785,10 +789,10 @@ void tiger_finalize(tiger_context *ctx, void *hash) {
 #ifndef TIGER_BIG_ENDIAN
     /* inplace */
     if( (pending_bits + 8 + 64) < TIGER_BLOCK_BITS) {
-        ctx->pending[pending_bytes] = 0x01;
-        memset(ctx->pending + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
-        ((uint64_t*)(ctx->pending))[7] = ctx->bits;
-        tiger_compress_macro((const uint64_t*)(ctx->pending), res[0], res[1], res[2]);
+        ctx->pending.bytes[pending_bytes] = 0x01;
+        memset(ctx->pending.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
+        (ctx->pending.words)[7] = ctx->bits;
+        tiger_compress_macro(ctx->pending.words, res[0], res[1], res[2]);
     } else
 #endif
     {
@@ -796,7 +800,7 @@ void tiger_finalize(tiger_context *ctx, void *hash) {
 #ifdef TIGER_BIG_ENDIAN
         size_t i;
 #endif
-        memcpy(buf, ctx->pending, pending_bytes);
+        memcpy(buf, ctx->pending.bytes, pending_bytes);
         buf[pending_bytes] = 0x01;
         memset(buf + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
         if ((pending_bits + 8 + 64) > TIGER_BLOCK_BITS) {
