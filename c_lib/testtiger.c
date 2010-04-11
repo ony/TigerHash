@@ -9,7 +9,7 @@
 #define ITERATIONS 30
 #else
 /* #define ITERATIONS 500 */
-#define ITERATIONS 2000000
+#define ITERATIONS 50000
 #endif
 
 
@@ -35,15 +35,15 @@ int main()
   uint64_t res[3];
   tiger_context *ctx;
 
-#define hash(str) ctx = tiger_new(); tiger_update(ctx, str, strlen(str)*8); tiger_finalize(ctx, res); tiger_free(ctx); \
+#define hash(str) ctx = tiger_new(); tiger_update(ctx, str, strlen(str)); tiger_finalize(ctx, res); tiger_free(ctx); \
   printf("Hash of \"%s\":\n\t%08X%08X %08X%08X %08X%08X\n", \
 	 str, \
-	 (uint32_t)(res[0]>>32), \
-	 (uint32_t)(res[0]), \
-	 (uint32_t)(res[1]>>32), \
-	 (uint32_t)(res[1]), \
-	 (uint32_t)(res[2]>>32), \
-	 (uint32_t)(res[2]) );
+	 ntohl((uint32_t)(res[0])), \
+	 ntohl((uint32_t)(res[0]>>32)), \
+	 ntohl((uint32_t)(res[1])), \
+	 ntohl((uint32_t)(res[1]>>32)), \
+	 ntohl((uint32_t)(res[2])), \
+	 ntohl((uint32_t)(res[2]>>32)) );
 
   /* Hash of short strings */
   hash("");
@@ -92,7 +92,17 @@ int main()
   rate = (double)CLOCKS_PER_SEC*(double)ITERATIONS*65556.0*8.0/
          ((double)(t2 - t1));
   */
-  rate = ((double)ITERATIONS)*sizeof(buffer)*8.0*(t2-t1);
-  printf("rate = %lf bit/s\n", rate);
+
+
+  rate = ((double)ITERATIONS)*sizeof(buffer)*8.0/(t2-t1);
+  /* printf("rate = %lf bit/s\n", rate); */
+
+  {
+      static const char *suffixes[] = {"bit", "Kbit", "Mbit", "Gbit", "Tbit", NULL};
+
+      for (i=0; (suffixes[i] != NULL) && (rate >= 512); ++i, rate /= 1024);
+      printf("rate = %lf %s/s\n", rate, suffixes[i]);
+  }
+
   return 0;
 }

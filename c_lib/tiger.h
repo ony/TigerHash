@@ -21,16 +21,28 @@
 #ifndef __tiger_h__
 #define __tiger_h__
 
-#define TIGER_HASH_BITS 512
+#include <stdlib.h>
+
+#define TIGER_HASH_BITS (3*64)
 #define TIGER_HASH_SIZE (TIGER_HASH_BITS/8)
 
 struct tiger_context_s;
 typedef struct tiger_context_s tiger_context;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 tiger_context *tiger_new();
+tiger_context *tiger_clone(const tiger_context *base_ctx);
 void tiger_reset(tiger_context *ctx);
 void tiger_free(tiger_context *ctx);
-void tiger_update(tiger_context *ctx, const void *block, size_t bits_count);
+void tiger_update(tiger_context *ctx, const void *block, size_t bytes_count);
 void tiger_finalize(tiger_context *ctx, void *hash);
+size_t tiger_context_size();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

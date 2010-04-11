@@ -130,7 +130,7 @@ void hash_fd(tiger_context *ctx, int fd, const char *desc) {
                 return;
             }
             aio_return(cb+ia);
-            tiger_update(ctx, buf[ia], cb[ia].aio_nbytes * 8);
+            tiger_update(ctx, buf[ia], cb[ia].aio_nbytes);
         }
 
         if( aio_suspend(cbp+ib, 1, NULL) != 0 ) {
@@ -138,7 +138,7 @@ void hash_fd(tiger_context *ctx, int fd, const char *desc) {
             return;
         }
         aio_return(cb+ib);
-        tiger_update(ctx, buf[ib], cb[ib].aio_nbytes * 8);
+        tiger_update(ctx, buf[ib], cb[ib].aio_nbytes);
     }
 #else
 #ifdef USE_MAP
@@ -160,14 +160,14 @@ void hash_fd(tiger_context *ctx, int fd, const char *desc) {
                 addr2 = mmap(NULL, r,
                     PROT_READ, MMAP_FLAGS,
                     0, pos);
-                tiger_update(ctx, addr1, r*8);
+                tiger_update(ctx, addr1, r);
                 munmap(addr1, r);
                 addr1 = addr2;
                 size_left -= r;
                 pos += r;
             }
 
-            tiger_update(ctx, addr1, r*8);
+            tiger_update(ctx, addr1, r);
             munmap(addr1, r);
             /*
             size_left -= r;
@@ -179,7 +179,7 @@ void hash_fd(tiger_context *ctx, int fd, const char *desc) {
     {
         char buf[BLK_SIZE];
         while( (r=read(fd,buf,sizeof(buf))) > 0 ) {
-            tiger_update(ctx, buf, r*8);
+            tiger_update(ctx, buf, r);
         }
     }
 #endif
