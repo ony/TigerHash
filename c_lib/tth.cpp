@@ -1,6 +1,7 @@
 #include <string>
 #include <iostream>
 #include <vector>
+#include <memory>
 
 #include <cassert>
 
@@ -14,6 +15,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
 
 
 #include "tiger.h"
@@ -240,7 +242,7 @@ public:
 
         while(block != NULL) {
             // std::cerr << plen - len << std::endl;
-            // std::cerr << HexDump((const char*)block, plen-len) << std::endl;
+            //std::cerr << HexDump((const char*)block, plen-len) << std::endl;
             tiger->update(block, plen-len);
             if (len == 0) break;
             plen = len;
@@ -275,11 +277,12 @@ public:
 
     typedef LTH< FileLTH > base_type;
 
-    FileLTH(const char *filename, Tiger *t) : base_type(t),
-        fd(-1 /*open(filename, O_RDONLY | O_DIRECT | O_NOATIME)*/),
+    FileLTH(Tiger *t) : base_type(t),
+        fd(-1),
+        pageA(NULL), pageB(NULL),
         offset(0),
         pgoffs(0)
-    { select(filename); }
+    { }
 
     ~FileLTH()
     {
@@ -298,25 +301,24 @@ public:
 
     bool select(const char *filename)
     {
-        if (fd != -1) close(fd);
+        if (fd != -1) {
+            close(fd);
+
+            if (pageB != NULL) {
+                munmap(pageA, PAGE_SIZE);
+                munmap(pageB, std::min<size_t>(PAGE_SIZE, length-offset-PAGE_SIZE));
+            } else if (pageA != NULL) {
+                munmap(pageA, length-offset);
+            }
+        }
 
         fd = ::open(filename, O_RDONLY | O_DIRECT | O_NOATIME);
         if (fd == -1) return false;
 
+        offset = 0;
+        pgoffs = 0;
         length = lseek(fd, 0, SEEK_END);
-        return rewind();
-    }
-
-    bool rewind()
-    {
         if (length == (off_t)-1) return false; // ill-formed object
-
-        if (pageB != NULL) {
-            munmap(pageA, PAGE_SIZE);
-            munmap(pageB, std::min<size_t>(PAGE_SIZE, length-offset-PAGE_SIZE));
-        } else if (pageA != NULL) {
-            munmap(pageA, length-offset);
-        }
 
         if (length <= PAGE_SIZE) {
             pageA = mmap(pageA, length, fd, 0);
@@ -341,6 +343,7 @@ public:
     {
         if (pageA == NULL) return NULL;
         else if (pageB == NULL) { // last page
+            assert( (offset + PAGE_SIZE) >= length );
             const size_t pgsz = length - offset;
             const size_t pgleft = pgsz - pgoffs;
             if (pgleft == 0) {
@@ -355,23 +358,23 @@ public:
             len -= blksz;
             return ptr;
         } else {
+            assert( (offset + PAGE_SIZE) < length );
             const size_t pgleft = PAGE_SIZE - pgoffs;
             if (pgleft == 0) {
                 swapPages();
                 offset += PAGE_SIZE;
                 pgoffs = 0;
                 munmap(pageB, PAGE_SIZE);
-                if ((offset+PAGE_SIZE) >= length) {
-                    pageB = NULL;
-                } else {
+                if ((offset+PAGE_SIZE) < length) {
                     pageB = mmap(pageB, std::min<size_t>(PAGE_SIZE, length-offset-PAGE_SIZE), fd, offset+PAGE_SIZE);
+                } else {
+                    pageB = NULL;
                 }
                 return nextBlock(len);
             }
 
-
             const size_t blksz = std::min(len, pgleft);
-            const void *ptr = pageA + pgoffs;
+            const char *ptr = pageA + pgoffs;
             pgoffs += blksz;
             len -= blksz;
             return ptr;
@@ -412,7 +415,7 @@ public:
 class FileITH : public ITH {
     FileLTH lth;
 public:
-    FileITH(const char *fn, Tiger *t) : ITH(t), lth(fn, t) {}
+    FileITH(Tiger *t) : ITH(t), lth(t) {}
 
     bool nextHash(Tiger::hash_type &hash)
     { return lth.next(hash); }
@@ -436,21 +439,33 @@ public:
 class TTR {
     Tiger tiger;
     FileITH lth;
-    std::vector<SuperITH> ith;
+    std::vector<std::auto_ptr<SuperITH> > ith;
+    size_t layer;
 public:
-    TTR(const char *fn) : lth(fn, &tiger)
-    {
-        const size_t layers = lth.layers()-1;
-        ith.reserve(layers);
-        size_t i;
-        ith.push_back(SuperITH(&lth));
-        for(i=1;i<layers;++i) ith.push_back(SuperITH(&(ith.back())));
-        //std::cerr << "layers = " << lth.layers() << std::endl;
+    TTR() : lth(&tiger), layer(0) {
+        ith.push_back(std::auto_ptr<SuperITH>(new SuperITH(&lth)));
     }
 
-    void finalize(Tiger::hash_type &hash)
+    bool select(const char *fn)
     {
-        ith.back().next(hash);
+        //std::cerr << fn << std::endl;
+        if (lth.select(fn) == false) return false;
+
+        layer = std::max<size_t>(100, lth.layers());
+
+        if (layer >= ith.size()) {
+            //std::cerr << ith.size() << " => " << (layer+1) << std::endl;
+            ith.reserve(layer+1);
+            while(layer >= ith.size()) {
+                ith.push_back(std::auto_ptr<SuperITH>(new SuperITH(ith.back().get())));
+            }
+        }
+        return true;
+    }
+
+    bool finalize(Tiger::hash_type &hash)
+    {
+        return (ith[layer]->next(hash));
     }
 };
 
@@ -460,40 +475,116 @@ public:
  * http://ru.wikipedia.org/wiki/TTH
 */
 
+void hash_file(TTR &ttr, const char *fn) {
+    if (ttr.select(fn) == false) {
+        perror("open/lseek/map/unmap");
+        return;
+    }
+    Tiger::hash_type h;
+    if (ttr.finalize(h)) {
+        std::cout << h << " " << fn << std::endl;
+    }
+}
+
+static inline int is_special(const char *s) {
+    switch(s[0]) {
+    case '.': break;
+    default: return 0;
+    }
+    switch(s[1]) {
+    case '\0': return 1;
+    case '.': break;
+    default: return 0;
+    }
+    switch(s[2]) {
+    case '\0': return 1;
+    default: return 0;
+    }
+}
+void hash_folder(TTR &ttr, const char *pn) {
+    DIR *dir = opendir(pn);
+    struct dirent *ent;
+    if (dir == NULL) {
+        perror("opendir");
+        return;
+    }
+    if (strcmp(pn,".") == 0) {
+        while((ent = readdir(dir)) != NULL) {
+            switch(ent->d_type) {
+            case DT_DIR:
+                if (!is_special(ent->d_name)) {
+                    hash_folder(ttr, ent->d_name);
+                }
+                break;
+            case DT_REG:
+                hash_file(ttr, ent->d_name);
+                break;
+            default: ;
+            }
+        }
+    } else {
+        const size_t pn_len = strlen(pn);
+        char *prefix = (char*)alloca(pn_len+1+NAME_MAX+1);
+        char *suffix = prefix+pn_len;
+        strcpy(prefix, pn);
+        strcpy(suffix++, "/");
+        while((ent = readdir(dir)) != NULL) {
+            switch(ent->d_type) {
+            case DT_DIR:
+                if (!is_special(ent->d_name)) {
+                    strcpy(suffix, ent->d_name);
+                    hash_folder(ttr, prefix);
+                }
+                break;
+            case DT_REG:
+                strcpy(suffix, ent->d_name);
+                hash_file(ttr, prefix);
+                break;
+            default: ;
+            }
+        }
+    }
+}
 int main(int argc, char *argv[])
 {
+    TTR ttr;
 
-    Tiger t;
-    Tiger::hash_type h;
-    /*
-    t.update("abc");
-    t.finalize(h);
-    std::cout << h << std::endl;
-    */
+    struct stat st;
+    if (argc < 2) {
+        ssize_t r;
+        char pn[4096];
+        char *p = pn, *q;
+        while(true) {
+            assert(p < (pn+sizeof(pn)));
+            r = read(0, p, pn+sizeof(pn)-p);
+            if (r < 1) break;
 
-    /*
-    FileLTH<> f("tth.cpp");
-    while(1) {
-        size_t n = 4096;
-        const char *p = (const char*)f.nextBlock(n);
-        if (p == NULL) break;
-        std::cout << n << std::endl;
-        std::cout << HexDump(p, 4096-n);
+            while (r > 0) {
+                q = (char*)memchr(p, '\n', r);
+                if (q == NULL) {
+                    p += r;
+                    break;
+                }
+                *q++ = '\0';
+                r = p+r - q;
+                std::cerr << pn << std::endl;
+
+                lstat(pn, &st);
+                if (S_ISREG(st.st_mode)) hash_file(ttr, pn);
+                else if (S_ISDIR(st.st_mode)) hash_folder(ttr, pn);
+
+                memmove(pn, q, r);
+                p = pn;
+            }
+        }
+    } else {
+        size_t i;
+        for(i=1;i<argc;++i) {
+            lstat(argv[i], &st);
+            if (S_ISREG(st.st_mode)) hash_file(ttr, argv[i]);
+            else if (S_ISDIR(st.st_mode)) hash_folder(ttr, argv[i]);
+        }
     }
-    */
-    TTR f("/.10/.public/Anime/Tonagura/1.avi");
-    /*
-    FileITH f("tth.cpp", t);
-    SuperITH g(&f);
-    SuperITH e(&g);
-    SuperITH z(&e);
-    while(z.next(h)) {
-        std::cout << h << std::endl;
-    }
-    */
-    //TTR f("tth.cpp");
-    f.finalize(h);
-    std::cout << h << std::endl;
 
     return 0;
 }
