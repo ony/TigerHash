@@ -46,7 +46,7 @@ endif
 
 
 
-all: testtiger hasher_aio hasher_mmap hasher_read testtiger.llvm tth
+all: testtiger hasher_aio hasher_mmap hasher_read testtiger.llvm tth tigertree.o
 
 clean:
 	rm -f *.o *.bc testtiger testtiger.llvm  hasher_aio hasher_mmap hasher_read

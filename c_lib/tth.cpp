@@ -451,7 +451,7 @@ public:
         //std::cerr << fn << std::endl;
         if (lth.select(fn) == false) return false;
 
-        layer = std::max<size_t>(100, lth.layers());
+        layer = std::max<size_t>(1, lth.layers());
 
         if (layer >= ith.size()) {
             //std::cerr << ith.size() << " => " << (layer+1) << std::endl;
@@ -465,7 +465,13 @@ public:
 
     bool finalize(Tiger::hash_type &hash)
     {
+#ifdef NDEBUG
         return (ith[layer]->next(hash));
+#else
+        bool r = ith[layer]->next(hash);
+        assert(ith[layer]->next(hash) == false);
+        return r;
+#endif
     }
 };
 
