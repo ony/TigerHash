@@ -18,23 +18,29 @@
 
  -}
 
-import TigerHash
-import TigerHash.ByteString
+{-# OPTIONS_GHC -O2 -fignore-asserts -fspec-constr #-}
+
+import Data.Digest.TigerHash
+import Data.Digest.TigerHash.ByteString
+import Data.Digest.TigerHash.Internal
 
 import Text.Printf
 
 import Data.Word
 import Data.Bits
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Internal as S
 import qualified Data.ByteString.Char8 as BC
 -- import Data.List.Stream ()
+import Foreign.Ptr
+import Foreign.ForeignPtr
 
 import Control.Monad
 
 import System.Posix.Process
 
 -- iterations = 1000000000::Word32
-iterations = 100000::Word32
+iterations = 1000000::Word32
 
 explodeBytes :: (Integral n, Bits n) => n -> [Word8]
 explodeBytes x = walk (bitSize x `div` 8) x where
@@ -62,6 +68,8 @@ main = do
   -- Hash of a 64K byte string
   -- let buffer = [fromIntegral i | i <- [0 .. 65535]] :: [Word8]
   let buffer = B.pack [fromIntegral i | i <- [0 .. 65535]]
+  buffer `seq` return ()
+  {-
   let th = tigerHash buffer 
   putStr $ "Hash of a 64K-byte string:\n\t" ++ show th ++ "\n"
 
@@ -70,15 +78,24 @@ main = do
   foldr1 seq buffers `seq` return ()
   -}
   let buffers = replicate (fromIntegral iterations) buffer
-
+  -}
   putStr "Calculating speed...\n"
 
   t1 <- getProcessTimes
     
   -- foldr1 (>>) . map (return . tigerHash) $ replicate iterations buffer
   -- putStr $ "Last: " ++ show (foldr1 seq $ map tigerHash buffers) ++ "\n"
-  -- putStr $ "Last: " ++ show (foldr1 seq $ tigerHashList buffers) ++ "\n"
-  putStr $ "Last: " ++ show (foldr1 seq (tigerHashList buffers)) ++ "\n"
+  -- putStr $ "Last: " ++ show (foldr1 seq (tigerHashList buffers)) ++ "\n"
+
+  let (p, s, bufSz) = S.toForeignPtr buffer in withForeignPtr p $ \p_ -> do
+          let bufPtr = (p_ `plusPtr` s)
+          withContext $ \ctx_ -> do
+              let body = do
+                      resetContext ctx_
+                      updateContext ctx_ bufPtr bufSz
+                      finalizeContext ctx_
+              mapM_ (const body) [1 .. fromIntegral iterations]
+
   {-
   let iter 1 = tigerHash buffer
       iter n = (tigerHash buffer) `seq` iter (n-1)
@@ -88,8 +105,14 @@ main = do
   t2 <- getProcessTimes
 
   let rate = fromIntegral iterations * fromIntegral (B.length buffer) * 8 / toRational (userTime t2 - userTime t1)
+  let humanRate = walk ["bit","KBit", "MBit", "GBit", "TBit"] where
+        walk [x] r = (r, x)
+        walk (x:xs) r | r < 512 = (r, x)
+                      | otherwise = walk xs (r / 1024)
 
   -- putStr $ "rate = " ++ show rate ++ " bit/s\n"
-  printf "rate = %.3f bit/s\n" ((fromRational rate)::Double)
+  --printf "rate = %.3f bit/s\n" ((fromRational rate)::Double)
+  let (hRate,hSym) = humanRate rate
+  printf "rate = %.3f %s/s\n" ((fromRational hRate)::Double) hSym
 
 

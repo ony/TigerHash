@@ -63,7 +63,7 @@ Library
   -- Packages needed in order to build this package.
   Build-depends: base,bytestring,binary,dataenc
 
-  Extensions: ForeignFunctionInterface,EmptyDataDecls
+  Extensions: ForeignFunctionInterface,EmptyDataDecls,FlexibleInstances
 
   C-Sources:	c_lib/tiger.c
   Include-Dirs:	c_lib
@@ -75,7 +75,7 @@ Library
       CC-Options: -DDEBUG -g
   else
       GHC-Options: -Wall -fno-warn-orphans
-  
+
   -- Modules not exported by this package.
   -- Other-modules:       
   

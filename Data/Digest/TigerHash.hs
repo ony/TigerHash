@@ -19,18 +19,25 @@
  -}
 
 {-# LANGUAGE BangPatterns #-}
-module Data.Digest.TigerHash (TigerHash, TigerHashable, tigerHash, tigerHashList) where
-import Data.Digest.TigerHash.Internal
+module Data.Digest.TigerHash (TigerHash, TigerHashable(..)) where
+import System.IO.Unsafe
+import Foreign.ForeignPtr
+import Foreign.Ptr
 
 -- import Data.Word
 -- import Data.Char
 import Text.Show
 -- import Text.Read
+import Data.ByteString.Internal (inlinePerformIO)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
+import qualified Codec.Binary.Base16 as B16
 import qualified Codec.Binary.Base32 as B32
+import Control.Monad
+
+import Data.Digest.TigerHash.Internal
 
 {-
 showNetHex64 :: Word64 -> ShowS
@@ -67,7 +74,7 @@ instance Read TigerHash where
 -}
 
 instance Show TigerHash where
-    showsPrec _ th = (++) (B32.encode . LBS.unpack . runPut $ put th)
+    showsPrec _ th = (++) (B16.encode . LBS.unpack . runPut $ put th)
 
 {-
 instance Read TigerHash where
@@ -84,7 +91,46 @@ instance Binary TigerHash where
         return (TigerHash a b c)
 
 class TigerHashable a where
+    tigerHashUpdate :: Ptr StreamState -> a -> IO ()
+
     tigerHash :: a -> TigerHash
+    tigerHash x = inlinePerformIO . withContext $ \ctx -> do
+        tigerHashUpdate ctx x
+        finalizeContext ctx
+
+    -- Calculate sequence of hashes where each next is calculated on-demand
+    -- and only after previous one
     tigerHashList :: [a] -> [TigerHash]
+    tigerHashList [] = []
+    tigerHashList (x0:xs) = unsafePerformIO $ do
+        ctx <- newContext
+
+        {- we will not be so smart...
+        let mcomb x mys = unsafeInterleaveIO $ do -- list structure is lazy
+                y <- unsafeInterleaveIO $ do -- each element calculated on-demand
+                    resetContext ctx
+                    tigerHashUpdate ctx x
+                    finalizeContext ctx
+                liftM (y:) mys
+
+        foldr mcomb (return []) xs
+        -}
+
+        let mcomb x mys = unsafeInterleaveIO $ do -- list structure is lazy
+                y <- withForeignPtr ctx $ \ctx_ -> do
+                    resetContext ctx_
+                    tigerHashUpdate ctx_ x
+                    finalizeContext ctx_
+                liftM (y:) mys
+
+        -- no need to resetContext after newContext
+        y0 <- withForeignPtr ctx $ \ctx_ -> do
+            tigerHashUpdate ctx_ x0
+            finalizeContext ctx_
+
+        liftM (y0:) $ foldr mcomb (return []) xs
+
+    {-# NOINLINE tigerHashList #-}
+
 
 
