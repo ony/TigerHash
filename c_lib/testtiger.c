@@ -14,6 +14,7 @@
 
 
 #include "tiger.h"
+#include "tigertree.h"
 
 double cputime()
 {
@@ -25,6 +26,16 @@ double cputime()
     */
 }
 
+void printrate(double rate)
+{
+    static const char *suffixes[] = {"bit", "Kbit", "Mbit", "Gbit", "Tbit", NULL};
+    int i;
+
+    for (i=0; (suffixes[i] != NULL) && (rate >= 512); ++i, rate /= 1024);
+    printf("rate = %lf %s/s\n", rate, suffixes[i]);
+}
+
+
 int main()
 {
   uint8_t buffer[65536];
@@ -34,6 +45,7 @@ int main()
 
   uint64_t res[3];
   tiger_context *ctx;
+  tigertree_context *tctx;
 
 #define hash(str) ctx = tiger_new(); tiger_feed(ctx, str, strlen(str)); tiger_finalize(ctx, res); tiger_free(ctx); \
   printf("Hash of \"%s\":\n\t%08X%08X %08X%08X %08X%08X\n", \
@@ -78,12 +90,12 @@ int main()
   for (i=0;i<ITERATIONS;i++)
     {
       //tiger_init(ctx);
-      tiger_reset(ctx);
+      //tiger_reset(ctx);
       tiger_feed(ctx, buffer, sizeof(buffer));
-      tiger_finalize(ctx, res);
+      //tiger_finalize(ctx, res);
       //tiger_done(ctx);
     }
-  //tiger_finalize(ctx, res);
+  tiger_finalize(ctx, res);
   tiger_free(ctx);
   //t2 = clock();
   t2 = cputime();
@@ -97,12 +109,29 @@ int main()
   rate = ((double)ITERATIONS)*sizeof(buffer)*8.0/(t2-t1);
   /* printf("rate = %lf bit/s\n", rate); */
 
-  {
-      static const char *suffixes[] = {"bit", "Kbit", "Mbit", "Gbit", "Tbit", NULL};
+  printrate(rate);
 
-      for (i=0; (suffixes[i] != NULL) && (rate >= 512); ++i, rate /= 1024);
-      printf("rate = %lf %s/s\n", rate, suffixes[i]);
-  }
+  t1 = cputime();
+  tctx = tigertree_new();
+  for (i=0;i<ITERATIONS;i++)
+    {
+      //tigertree_reset(tctx);
+      tigertree_feed(tctx, buffer, sizeof(buffer));
+      //tigertree_finalize(tctx, res);
+    }
+  tigertree_finalize(tctx, res);
+  tigertree_free(tctx);
+  t2 = cputime();
+
+  /*
+  rate = (double)CLOCKS_PER_SEC*(double)ITERATIONS*65556.0*8.0/
+         ((double)(t2 - t1));
+  */
+
+
+  rate = ((double)ITERATIONS)*sizeof(buffer)*8.0/(t2-t1);
+  /* printf("rate = %lf bit/s\n", rate); */
+  printrate(rate);
 
   return 0;
 }

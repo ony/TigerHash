@@ -21,195 +21,9 @@
 #include "tiger.h"
 #include "tigertree.h"
 
-const char b64digit(const int index) {
-    switch(index) {
-    case  0 ... 25: return (index + 'A');
-    case 26 ... 51: return (index - 26 + 'a');
-    case 52 ... 61: return (index - 52 + '0');
-    case 62: return '+';
-    case 63: return '/';
-    default: 
-        std::cerr << "b64digit " << index << " is out of bounds [0..63]" << std::endl;
-        abort();
-    }
-}
+#include "Tiger.hpp"
 
-template<size_t _bits>
-class BitsIter {
-    const uint8_t *p;
-    unsigned short offs;
-public:
-    enum { BITS = _bits };
-    BitsIter(const uint8_t *data) : p(data), offs(0) {}
-
-    uint32_t next() {
-        uint32_t r = p[0] & (0xff >> offs);
-        if (BITS < (8-offs)) {
-            r >>= 8-offs-BITS;
-            offs += BITS;
-            return r;
-        }
-
-        ++p;
-        size_t i = 8-offs;
-
-        for(;(i+8)<BITS;i+=8) {
-            r <<= 8;
-            r |= *p++;
-        }
-
-        offs = BITS - i;
-        if (offs > 0) {
-            r <<= offs;
-            r |= p[0] >> (8-offs);
-        }
-
-        return r;
-    }
-
-    uint32_t pad() const {
-        uint32_t r = p[0] & (0xff >> offs);
-        r <<= BITS - (8-offs);
-        return r;
-    }
-};
-
-
-
-template<int _bits>
-struct Hash {
-    enum { BITS = _bits, BYTES = _bits / 8 + ((_bits % 8)?1:0), NIBBLES = _bits / 4 + ((_bits % 4)?1:0) };
-
-    uint8_t data[BYTES];
-
-    std::basic_string<uint8_t> binary() const {
-        return std::string(data, BYTES);
-    }
-
-    std::string hex() const {
-        assert((BITS % 4) == 0);
-
-        static const char digits[] = "0123456789ABCDEF";
-        std::string digest;
-
-        digest.reserve(NIBBLES);
-
-        int i,j;
-        for(i=j=0; (i+2) <= NIBBLES; i+=2, ++j) {
-            digest.push_back(digits[(data[j] >> 4) & 0xf]);
-            digest.push_back(digits[data[j] & 0xf]);
-        }
-        if (i < NIBBLES) {
-            digest.push_back(digits[(data[j] >> 4) & 0xf]);
-        }
-        return digest;
-    }
-    std::string base64() const {
-
-        assert(((BITS % 6) == 0) || ((BITS % 8) == 0));
-
-        std::string digest;
-
-        digest.reserve((BITS/6)+1);
-
-        size_t i, j;
-        BitsIter<6> g(data);
-        for(i=0; (i+6) < BITS; i+=6) {
-            digest.push_back(b64digit( g.next() ));
-        }
-        if (i < BITS) {
-            digest.push_back(b64digit( g.pad() ));
-            digest.push_back('=');
-
-        }
-        return digest;
-    }
-
-    std::string base32() const {
-        static const char digits[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-
-        assert(((BITS % 5) == 0) || ((BITS % 8) == 0));
-
-        std::string digest;
-
-        digest.reserve((BITS/5)+1);
-
-        size_t i;
-        BitsIter<5> g(data);
-        for(i=0; (i+5) < BITS; i+= 5) {
-            digest.push_back(digits[g.next()]);
-        }
-
-        if (i < BITS) {
-            digest.push_back(digits[g.pad()]);
-            digest.push_back('=');
-
-        }
-        return digest;
-    }
-};
-
-template<int _bits>
-std::ostream &operator<<(std::ostream &s, const Hash<_bits> &hash)
-{
-    return (s << hash.base32());
-}
-
-
-class Tiger {
-    tiger_context *ctx;
-public:
-    enum { HASH_BITS = TIGER_HASH_BITS, HASH_SIZE = TIGER_HASH_SIZE };
-
-    typedef Hash<HASH_BITS> hash_type;
-
-    Tiger() : ctx(tiger_new()) {};
-    Tiger(const Tiger &base) : ctx(tiger_clone(base.ctx)) {};
-    ~Tiger() { tiger_free(ctx); }
-
-    Tiger &operator=(const Tiger &base) {
-        tiger_free(ctx);
-        ctx = tiger_clone(base.ctx);
-        return (*this);
-    }
-
-    void reset() { return tiger_reset(ctx); }
-    void feed(const void *block, size_t bytes_count) { return tiger_feed(ctx, block, bytes_count); }
-    void finalize(void *hash) { return tiger_finalize(ctx, hash); }
-
-    void feed(const std::string &block) { return feed(block.data(), block.size()); }
-    void finalize(hash_type &hash) { return finalize(hash.data); }
-};
-
-class TigerTree {
-    tigertree_context *ctx;
-private:
-    TigerTree(const Tiger &);
-    Tiger &operator=(const Tiger &);
-public:
-    enum { HASH_BITS = TIGER_HASH_BITS, HASH_SIZE = TIGER_HASH_SIZE };
-
-    typedef Hash<HASH_BITS> hash_type;
-
-    TigerTree() : ctx(tigertree_new()) {};
-    //Tiger(const Tiger &base) : ctx(tigertree_clone(base.ctx)) {};
-    ~TigerTree() { tigertree_free(ctx); }
-
-    /*
-    Tiger &operator=(const Tiger &base) {
-        tigertree_free(ctx);
-        ctx = tigertree_clone(base.ctx);
-        return (*this);
-    }
-    */
-
-    void reset() { return tigertree_reset(ctx); }
-    void feed(const void *block, size_t bytes_count) { return tigertree_feed(ctx, block, bytes_count); }
-    void finalize(void *hash) { return tigertree_finalize(ctx, hash); }
-
-    void feed(const std::string &block) { return feed(block.data(), block.size()); }
-    void finalize(hash_type &hash) { return finalize(hash.data); }
-};
+//#define TIGERTREE_CXX 1
 
 class HexDump {
     const char * const blockData;
@@ -245,7 +59,6 @@ std::ostream &operator<<(std::ostream &s, const HexDump& dump) {
 }
 
 #define final (static_cast<final_type*>(this))
-
 
 template<class _Impl>
 class LTH {
@@ -414,6 +227,7 @@ public:
     }
 };
 
+#ifdef TIGERTREE_CXX
 class ITH {
     Tiger *tiger;
 public:
@@ -507,7 +321,7 @@ public:
     }
 };
 
-/*
+#else
 class TTR {
     Tiger tiger;
     TigerTree tigert;
@@ -541,7 +355,7 @@ public:
         return true;
     }
 };
-*/
+#endif
 
 /* Leaf Tiger Hash = LTH = Tiger(00 + 1024-bytes block)
  * Internal Tiger Hash = ITH = Tiger(01 + hash1 + hash2)

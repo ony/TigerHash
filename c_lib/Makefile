@@ -8,6 +8,7 @@ CFLAGS+=$(CDEFS)
 
 CDEFS+=-D__USE_LARGEFILE64
 ifeq ($(CC),icc)
+CXX = $(CC) -x c++
 
 CFLAGS+=-O3 -ipo
 ifeq ($(TARGET_CPU),core2duo)
@@ -49,7 +50,7 @@ endif
 all: testtiger hasher_aio hasher_mmap hasher_read testtiger.llvm tth tigertree.o pipehash dhash
 
 clean:
-	rm -f *.o *.bc testtiger testtiger.llvm  hasher_aio hasher_mmap hasher_read
+	rm -f *.o *.a *.bc testtiger testtiger.llvm  hasher_aio hasher_mmap hasher_read dhash pipehash tth
 
 pipehash: pipehash.o libtigerhash.a
 dhash: dhash.o libtigerhash.a
@@ -57,12 +58,14 @@ dhash: dhash.o libtigerhash.a
 
 dhash.o: Tiger.hpp tiger.h tigertree.h
 
-testtiger: testtiger.o tiger.o
+testtiger: testtiger.o libtigerhash.a
 tth.o: tiger.h
 tth: tth.o libtigerhash.a
 	$(CXX) $(LDFLAGS) -o $(@) $(^)
 
+
 tth.o: CXXFLAGS+=-std=c++0x
+
 
 hasher_aio.o: CDEFS+=-DUSE_AIO
 hasher_mmap.o: CDEFS+=-DUSE_MMAP
