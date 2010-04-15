@@ -21,7 +21,9 @@
 #ifndef __tigertree_h__
 #define __tigertree_h__
 
-typedef struct tt_ctx_s tt_ctx;
+#include <stdlib.h>
+
+typedef struct tigertree_context_s tigertree_context;
 
 #define TIGERTREE_BLOCK_SIZE 1024
 
@@ -29,11 +31,15 @@ typedef struct tt_ctx_s tt_ctx;
 extern "C" {
 #endif
 
-void tt_init(tt_ctx *ctx);
-void tt_done(tt_ctx *ctx);
-void tt_feed(tt_ctx *ctx, const void *block, size_t bytes_count);
-void tt_finalize(tt_ctx *ctx, void *hash);
-void tt_reset(tt_ctx *ctx);
+void tigertree_init(tigertree_context *ctx);
+void tigertree_done(tigertree_context *ctx);
+void tigertree_feed(tigertree_context *ctx, const void *block, size_t bytes_count);
+void tigertree_finalize(tigertree_context *ctx, void *hash);
+void tigertree_reset(tigertree_context *ctx);
+
+const size_t tigertree_context_size;
+tigertree_context *tigertree_new();
+void tigertree_free(tigertree_context *ctx);
 
 #ifdef __cplusplus
 }

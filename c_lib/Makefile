@@ -46,14 +46,20 @@ endif
 
 
 
-all: testtiger hasher_aio hasher_mmap hasher_read testtiger.llvm tth tigertree.o
+all: testtiger hasher_aio hasher_mmap hasher_read testtiger.llvm tth tigertree.o pipehash dhash
 
 clean:
 	rm -f *.o *.bc testtiger testtiger.llvm  hasher_aio hasher_mmap hasher_read
 
+pipehash: pipehash.o libtigerhash.a
+dhash: dhash.o libtigerhash.a
+	$(CXX) $(LDFLAGS) -o $(@) $(^)
+
+dhash.o: Tiger.hpp tiger.h tigertree.h
+
 testtiger: testtiger.o tiger.o
 tth.o: tiger.h
-tth: tth.o tiger.o
+tth: tth.o libtigerhash.a
 	$(CXX) $(LDFLAGS) -o $(@) $(^)
 
 tth.o: CXXFLAGS+=-std=c++0x
@@ -66,6 +72,10 @@ hasher_aio.o hasher_mmap.o hasher_read.o: hasher.c tiger.h
 
 hasher_aio hasher_mmap hasher_read: tiger.o
 hasher_aio: LDFLAGS+=-lrt -pthread
+
+libtigerhash.a: tiger.o tigertree.o
+	$(AR) -cru $(@) $(^)
+	ranlib $(@)
 
 .PHONY: all clean
 

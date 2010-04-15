@@ -39,36 +39,44 @@
 #include <assert.h>
 #include <string.h>
 
+#ifndef NDEBUG
+#include <stdio.h>
+#define DEBUGF(fmt, args...) (fprintf(stderr, "%s(%s+%d): " fmt "\n", __FUNCTION__, __FILE__, __LINE__, args), fflush(stderr))
+#else
+#define DEBUGF(fmt, args...)
+#endif
+
 #include "tiger.h"
 #include "tigertree.h"
 
-typedef struct tt_stack_s {
+typedef struct tigertree_stack_s {
     char buf[1+2*TIGER_HASH_SIZE]; // 00 - empty, 01 - half
-    struct tt_stack_s *upper;
-} tt_stack;
+    struct tigertree_stack_s *upper;
+} tigertree_stack;
 
-typedef struct tt_allocs_s {
-    tt_stack data[64];
-    struct tt_allocs_s *prev;
-} tt_allocs;
+typedef struct tigertree_allocs_s {
+    tigertree_stack data[32]; // 4 TB files
+    struct tigertree_allocs_s *prev;
+} tigertree_allocs;
 
-struct tt_ctx_s {
+struct tigertree_context_s {
     size_t left;
 
     tiger_context *tiger;
 
-    size_t level;
-    //tt_stack *top;
-    tt_stack *bottom;
-    tt_allocs *allocs;
+    unsigned int level;
+    tigertree_stack *bottom;
+    tigertree_allocs *allocs;
 };
 
+const size_t tigertree_context_size = sizeof(struct tigertree_context_s);
+
 // returns first allocated
-static tt_stack *tt_alloc(tt_ctx *ctx)
+static tigertree_stack *tigertree_alloc(tigertree_context *ctx)
 {
     size_t i;
-    tt_allocs *next = (tt_allocs*)malloc(sizeof(tt_allocs));
-    tt_stack *const data = next->data;
+    tigertree_allocs *next = (tigertree_allocs*)malloc(sizeof(tigertree_allocs));
+    tigertree_stack *const data = next->data;
     const size_t cnt = sizeof(next->data)/sizeof(data[0]);
     
     for(i=1;i<cnt;++i) {
@@ -88,24 +96,23 @@ static tt_stack *tt_alloc(tt_ctx *ctx)
     return data;
 }
 
-void tt_init(tt_ctx *ctx)
+void tigertree_init(tigertree_context *ctx)
 {
     ctx->tiger = tiger_new();
-    tiger_update(ctx->tiger, "\0", 1);
+    tiger_feed(ctx->tiger, "\0", 1);
 
     ctx->left = TIGERTREE_BLOCK_SIZE;
 
     ctx->level = 0;
-    //ctx->top = NULL;
     ctx->allocs = NULL;
-    ctx->bottom = tt_alloc(ctx); // atleast one level
+    ctx->bottom = tigertree_alloc(ctx); // atleast one level
 }
 
-void tt_done(tt_ctx *ctx)
+void tigertree_done(tigertree_context *ctx)
 {
-    tt_allocs *f = ctx->allocs;
+    tigertree_allocs *f = ctx->allocs;
     while(f != NULL) {
-        tt_allocs * const u = f->prev;
+        tigertree_allocs * const u = f->prev;
         free(f);
         f = u;
     }
@@ -114,49 +121,54 @@ void tt_done(tt_ctx *ctx)
 }
 
 
-static void tt_feed_leaf(tt_ctx *ctx)
+static void tigertree_feed_leaf(tigertree_context *ctx)
 {
-    const size_t clevel = ctx->level;
-    size_t level = 1;
-    tt_stack *node = ctx->bottom;
+    const unsigned int clevel = ctx->level;
+    unsigned int level = 1;
+    tigertree_stack *node = ctx->bottom;
     assert( ctx->bottom != NULL );
 
-    while((node->buf[0] == '\1') && (level < clevel)) { // carry up
+
+    //DEBUGF("node marker 0x%02x", node->buf[0]);
+    while((node->buf[0] == '\1') && (level <= clevel)) { // carry up
+        //DEBUGF("carry up from level %u", level);
         tiger_finalize(ctx->tiger, node->buf + 1 + TIGER_HASH_SIZE);
 
         tiger_reset(ctx->tiger);
-        tiger_update(ctx->tiger, node->buf, sizeof(node->buf));
+        tiger_feed(ctx->tiger, node->buf, sizeof(node->buf));
         node->buf[0] = '\0';
 
         node = node->upper;
-        if (node == NULL ) node = tt_alloc(ctx);
-        ++level;
+        if (node == NULL ) {
+            node = tigertree_alloc(ctx);
+            ++level;
+            break;
+        }
+        else if ((++level) > clevel) break;
     }
     //assert( node->buf[0] == '\0' );
+    //DEBUGF("put at level %u (toplevel = %u)", level, clevel);
 
-    if (level > clevel) {
-        ctx->level = level;
-        //ctx->top = node;
-    }
+    if (level > clevel) ctx->level = level;
 
     node->buf[0] = '\1';
     return tiger_finalize(ctx->tiger, node->buf + 1);
 }
 
-void tt_feed(tt_ctx *ctx, const void *buf, size_t len)
+void tigertree_feed(tigertree_context *ctx, const void *buf, size_t len)
 {
     const char *p = buf;
 
     while(1) {
         if (len < ctx->left) {
             ctx->left -= len;
-            return tiger_update(ctx->tiger, p, len);
+            return tiger_feed(ctx->tiger, p, len);
         }
-        tiger_update(ctx->tiger, p, ctx->left);
-        tt_feed_leaf(ctx);
+        tiger_feed(ctx->tiger, p, ctx->left);
+        tigertree_feed_leaf(ctx);
 
         tiger_reset(ctx->tiger);
-        tiger_update(ctx->tiger, "\0", 1);
+        tiger_feed(ctx->tiger, "\0", 1);
 
         p += ctx->left;
         len -= ctx->left;
@@ -164,15 +176,15 @@ void tt_feed(tt_ctx *ctx, const void *buf, size_t len)
     }
 }
 
-void tt_finalize(tt_ctx *ctx, void *hash)
+void tigertree_finalize(tigertree_context *ctx, void *hash)
 {
-    if (ctx->left < TIGERTREE_BLOCK_SIZE) tt_feed_leaf(ctx); // last block
+    if (ctx->left < TIGERTREE_BLOCK_SIZE) tigertree_feed_leaf(ctx); // last block
     tiger_reset(ctx->tiger);
 
     {
         const size_t clevel = ctx->level;
         size_t level;
-        tt_stack *node = ctx->bottom;
+        tigertree_stack *node = ctx->bottom;
         const void *rhash = NULL;
 
         assert( ctx->level > 0 );
@@ -180,17 +192,21 @@ void tt_finalize(tt_ctx *ctx, void *hash)
         for(level = 1; level <= clevel; ++level, node = node->upper) {
             assert( node != NULL );
 
+            DEBUGF("node marker 0x%02x", node->buf[0]);
+
             if (node->buf[0] == '\0') continue;
             assert( node->buf[0] == '\1' );
 
             if (rhash == NULL) {
                 rhash = node->buf+1;
+                DEBUGF("first rhash @ %p", rhash);
                 continue;
             }
             // assert( rhash != NULL );
 
-            tiger_update(ctx->tiger, node->buf, 1+TIGER_HASH_SIZE);
-            tiger_update(ctx->tiger, rhash, TIGER_HASH_SIZE);
+            DEBUGF("combine %p %p", node->buf+1, rhash);
+            tiger_feed(ctx->tiger, node->buf, 1+TIGER_HASH_SIZE);
+            tiger_feed(ctx->tiger, rhash, TIGER_HASH_SIZE);
             tiger_finalize(ctx->tiger, hash);
             tiger_reset(ctx->tiger);
             rhash = hash;
@@ -200,13 +216,25 @@ void tt_finalize(tt_ctx *ctx, void *hash)
     }
 }
 
-void tt_reset(tt_ctx *ctx)
+void tigertree_reset(tigertree_context *ctx)
 {
     tiger_reset(ctx->tiger);
-    tiger_update(ctx->tiger, "\0", 1);
+    tiger_feed(ctx->tiger, "\0", 1);
 
     ctx->left = TIGERTREE_BLOCK_SIZE;
 
     ctx->level = 0; // will cut carrying
-    //ctx->top = NULL;
+}
+
+tigertree_context *tigertree_new()
+{
+    tigertree_context *ctx = (tigertree_context*)malloc(sizeof(tigertree_context));
+    tigertree_init(ctx);
+    return ctx;
+}
+
+void tigertree_free(tigertree_context *ctx)
+{
+    tigertree_done(ctx);
+    free(ctx);
 }

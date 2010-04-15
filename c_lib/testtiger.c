@@ -35,7 +35,7 @@ int main()
   uint64_t res[3];
   tiger_context *ctx;
 
-#define hash(str) ctx = tiger_new(); tiger_update(ctx, str, strlen(str)); tiger_finalize(ctx, res); tiger_free(ctx); \
+#define hash(str) ctx = tiger_new(); tiger_feed(ctx, str, strlen(str)); tiger_finalize(ctx, res); tiger_free(ctx); \
   printf("Hash of \"%s\":\n\t%08X%08X %08X%08X %08X%08X\n", \
 	 str, \
 	 ntohl((uint32_t)(res[0])), \
@@ -62,7 +62,7 @@ int main()
     buffer[i] = i&0xFF;
 
   ctx = tiger_new();
-  tiger_update(ctx, buffer, sizeof(buffer));
+  tiger_feed(ctx, buffer, sizeof(buffer));
   tiger_finalize(ctx, res);
   tiger_free(ctx);
   printf("Hash of a 64K-byte string:\n\t%08X%08X %08X%08X %08X%08X\n",
@@ -79,7 +79,7 @@ int main()
     {
       //tiger_init(ctx);
       tiger_reset(ctx);
-      tiger_update(ctx, buffer, sizeof(buffer));
+      tiger_feed(ctx, buffer, sizeof(buffer));
       tiger_finalize(ctx, res);
       //tiger_done(ctx);
     }

@@ -19,6 +19,7 @@
 
 
 #include "tiger.h"
+#include "tigertree.h"
 
 const char b64digit(const int index) {
     switch(index) {
@@ -173,10 +174,41 @@ public:
     }
 
     void reset() { return tiger_reset(ctx); }
-    void update(const std::string &block) { return tiger_update(ctx, block.data(), block.size()); }
-    void update(const void *block, size_t bytes_count) { return tiger_update(ctx, block, bytes_count); }
+    void feed(const void *block, size_t bytes_count) { return tiger_feed(ctx, block, bytes_count); }
     void finalize(void *hash) { return tiger_finalize(ctx, hash); }
-    void finalize(hash_type &hash) { return tiger_finalize(ctx, hash.data); }
+
+    void feed(const std::string &block) { return feed(block.data(), block.size()); }
+    void finalize(hash_type &hash) { return finalize(hash.data); }
+};
+
+class TigerTree {
+    tigertree_context *ctx;
+private:
+    TigerTree(const Tiger &);
+    Tiger &operator=(const Tiger &);
+public:
+    enum { HASH_BITS = TIGER_HASH_BITS, HASH_SIZE = TIGER_HASH_SIZE };
+
+    typedef Hash<HASH_BITS> hash_type;
+
+    TigerTree() : ctx(tigertree_new()) {};
+    //Tiger(const Tiger &base) : ctx(tigertree_clone(base.ctx)) {};
+    ~TigerTree() { tigertree_free(ctx); }
+
+    /*
+    Tiger &operator=(const Tiger &base) {
+        tigertree_free(ctx);
+        ctx = tigertree_clone(base.ctx);
+        return (*this);
+    }
+    */
+
+    void reset() { return tigertree_reset(ctx); }
+    void feed(const void *block, size_t bytes_count) { return tigertree_feed(ctx, block, bytes_count); }
+    void finalize(void *hash) { return tigertree_finalize(ctx, hash); }
+
+    void feed(const std::string &block) { return feed(block.data(), block.size()); }
+    void finalize(hash_type &hash) { return finalize(hash.data); }
 };
 
 class HexDump {
@@ -238,12 +270,12 @@ public:
 
         size_t plen = BLOCK_SIZE;
 
-        tiger->update(&magic, sizeof(magic));
+        tiger->feed(&magic, sizeof(magic));
 
         while(block != NULL) {
             // std::cerr << plen - len << std::endl;
             //std::cerr << HexDump((const char*)block, plen-len) << std::endl;
-            tiger->update(block, plen-len);
+            tiger->feed(block, plen-len);
             if (len == 0) break;
             plen = len;
             block = final->nextBlock(len);
@@ -399,9 +431,9 @@ public:
         f = nextHash(hashB);
         if (f == false) return true;
 
-        tiger->update(&magic, sizeof(magic));
-        tiger->update(hash.data, Tiger::hash_type::BYTES);
-        tiger->update(hashB.data, Tiger::hash_type::BYTES);
+        tiger->feed(&magic, sizeof(magic));
+        tiger->feed(hash.data, Tiger::hash_type::BYTES);
+        tiger->feed(hashB.data, Tiger::hash_type::BYTES);
         
         tiger->finalize(hash);
         tiger->reset();
@@ -474,6 +506,42 @@ public:
 #endif
     }
 };
+
+/*
+class TTR {
+    Tiger tiger;
+    TigerTree tigert;
+    FileLTH lth;
+public:
+    TTR() : lth(&tiger) {
+    }
+
+    bool select(const char *fn)
+    {
+        //std::cerr << fn << std::endl;
+        if (lth.select(fn) == false) return false;
+
+        return true;
+    }
+
+    bool finalize(Tiger::hash_type &hash)
+    {
+        size_t len;
+        const void *block = NULL;
+        while(true) {
+            len = 4096;
+            const size_t plen = len;
+            block = lth.nextBlock(len);
+            if (plen == len) break;
+            if (block == NULL) break;
+            tigert.feed(block, plen-len);
+        }
+        tigert.finalize(hash);
+        tigert.reset();
+        return true;
+    }
+};
+*/
 
 /* Leaf Tiger Hash = LTH = Tiger(00 + 1024-bytes block)
  * Internal Tiger Hash = ITH = Tiger(01 + hash1 + hash2)
