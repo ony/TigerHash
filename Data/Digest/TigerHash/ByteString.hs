@@ -18,6 +18,7 @@
 
  -}
 
+-- | This module provides nothing, but instances for 'TigerHashable'
 module Data.Digest.TigerHash.ByteString () where
 
 
