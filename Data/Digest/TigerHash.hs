@@ -22,6 +22,7 @@
 module Data.Digest.TigerHash (TigerHash, TigerHashable(..), hexTigerHash, b32TigerHash) where
 import System.IO.Unsafe
 import Foreign.ForeignPtr
+import Foreign.Ptr
 
 import Text.Show
 import Data.ByteString.Internal (inlinePerformIO)
@@ -51,20 +52,26 @@ instance Binary TigerHash where
         return (TigerHash a b c)
 
 class TigerHashable a where
-    tigerHashUpdate :: TigerContext c => c -> a -> IO ()
+    -- | Each "hashable" object should implement this using TigerContext class
+    --   from Data.Digest.TigerHash.Internal. 
+    tigerHashUpdate :: (TigerContext (Ptr c)) => Ptr c -> a -> IO ()
 
+    -- | Instant Tiger Hash calculated with stack allocated context.
     tigerHash :: a -> TigerHash
     tigerHash x = inlinePerformIO . withTigerContext $ \ctx -> do
         tigerHashUpdate ctx x
         finalizeContext ctx
 
+    -- | Same as tgerHash, but with Tiger Tree hashing algorithm
     tigerTreeHash :: a -> TigerHash
     tigerTreeHash x = inlinePerformIO . withTigerTreeContext $ \ctx -> do
         tigerHashUpdate ctx x
         finalizeContext ctx
 
-    -- Calculate sequence of hashes where each next is calculated on-demand
-    -- and only after previous one
+    -- | Calculate sequence of hashes where each next is calculated on-demand
+    --   and only after previous one using one context for all calculations.
+    --   Be sure to prepare sequence wich contains only required for hashing
+    --   entries.
     tigerHashList :: [a] -> [TigerHash]
     tigerHashList [] = []
     tigerHashList (x0:xs) = unsafePerformIO $ do
@@ -86,6 +93,7 @@ class TigerHashable a where
 
     {-# NOINLINE tigerHashList #-}
 
+    -- | Same as tigerHashList, but with Tiger Tree hashing algorithm
     tigerTreeHashList :: [a] -> [TigerHash]
     tigerTreeHashList [] = []
     tigerTreeHashList (x0:xs) = unsafePerformIO $ do

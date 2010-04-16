@@ -46,7 +46,7 @@ Extra-source-files:
     examples/testtiger.hs
 
 -- Constraint on the version of Cabal needed to build this package.
-Cabal-version:       >=1.2
+Cabal-version:       >=1.4
 
 Flag debug
   Description: Enable debug support
@@ -61,7 +61,7 @@ Library
     Data.Digest.TigerHash.Internal
   
   -- Packages needed in order to build this package.
-  Build-depends: base,bytestring,binary,dataenc
+  Build-depends: base >= 4 && < 5,bytestring,binary,dataenc
 
   Extensions: ForeignFunctionInterface,EmptyDataDecls,FlexibleInstances,FlexibleContexts,UndecidableInstances
 

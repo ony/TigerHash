@@ -1,3 +1,5 @@
+{-# LANGUAGE ForeignFunctionInterface,FlexibleInstances #-}
+{-# LANGUAGE EmptyDataDecls #-}
 {-
     DC++ protocl utls for GHC
     Copyright (C) 2009 Nikolay Orlyuk (virkony _at_ gmail _dot_ com)
@@ -18,8 +20,6 @@
 
  -}
 
-{-# LANGUAGE ForeignFunctionInterface,FlexibleInstances #-}
-{-# LANGUAGE EmptyDataDecls #-}
 module Data.Digest.TigerHash.Internal (
     TigerHash(..), TigerContext(..), TigerState, TigerTreeState,
     newTigerContext,
