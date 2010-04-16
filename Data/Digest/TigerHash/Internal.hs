@@ -106,9 +106,9 @@ data TigerTreeState
 {-# CFILES c_lib/tiger.c #-}
 
 foreign import ccall unsafe "tiger.h tiger_context_size" sizeofTigerContext :: Int
-foreign import ccall unsafe "tiger.h tiger_new" newTigerContext_ :: IO (Ptr TigerState)
 foreign import ccall unsafe "tiger.h tiger_init" initTigerContext_ :: Ptr TigerState -> IO ()
-foreign import ccall unsafe "tiger.h &tiger_free" freeTigerContext_ :: FinalizerPtr TigerState
+-- foreign import ccall unsafe "tiger.h tiger_new" newTigerContext_ :: IO (Ptr TigerState)
+-- foreign import ccall unsafe "tiger.h &tiger_free" freeTigerContext_ :: FinalizerPtr TigerState
 
 foreign import ccall unsafe "tiger.h tiger_feed" updateTigerContext_ :: Ptr TigerState -> Ptr a -> CSize -> IO ()
 foreign import ccall unsafe "tiger.h tiger_finalize" finalizeTigerContext_ :: Ptr TigerState -> Ptr Word64 -> IO ()
@@ -117,9 +117,9 @@ foreign import ccall unsafe "tiger.h tiger_reset" resetTigerContext_ :: Ptr Tige
 {-# CFILES c_lib/tigertree.c #-}
 
 foreign import ccall unsafe "tigertree.h tigertree_context_size" sizeofTigerTreeContext :: Int
-foreign import ccall unsafe "tigertree.h tigertree_new" newTigerTreeContext_ :: IO (Ptr TigerTreeState)
 foreign import ccall unsafe "tigertree.h tigertree_init" initTigerTreeContext_ :: Ptr TigerTreeState -> IO ()
-foreign import ccall unsafe "tigertree.h &tigertree_free" freeTigerTreeContext_ :: FinalizerPtr TigerTreeState
+-- foreign import ccall unsafe "tigertree.h tigertree_new" newTigerTreeContext_ :: IO (Ptr TigerTreeState)
+-- foreign import ccall unsafe "tigertree.h &tigertree_free" freeTigerTreeContext_ :: FinalizerPtr TigerTreeState
 
 foreign import ccall unsafe "tigertree.h tigertree_feed" updateTigerTreeContext_ :: Ptr TigerTreeState -> Ptr a -> CSize -> IO ()
 foreign import ccall unsafe "tigertree.h tigertree_finalize" finalizeTigerTreeContext_ :: Ptr TigerTreeState -> Ptr Word64 -> IO ()
