@@ -38,7 +38,7 @@ import qualified Data.Digest.TigerHash.Internal as T
 instance TigerHashable S.ByteString where
     tigerHashUpdate ctx = updateBS . S.toForeignPtr where
         updateBS (_, _, 0) = return ()
-        updateBS (p, s, l) = withForeignPtr p $ \p_ -> T.updateContext ctx (p_ `plusPtr` s) (l*8)
+        updateBS (p, s, l) = withForeignPtr p $ \p_ -> T.updateContext ctx (p_ `plusPtr` s) l
         {-# INLINE updateBS #-}
     {-# INLINE tigerHashUpdate #-}
 
@@ -56,5 +56,3 @@ instance TigerHashable [Word8] where
     tigerHashList = tigerHashList . map LBS.pack
     {-# INLINE tigerHashList #-}
 
-
--- test1 = take 10 . tigerHashList $ repeat [0::Word8,1,2]

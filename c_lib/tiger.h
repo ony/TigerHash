@@ -35,11 +35,13 @@ extern "C" {
 
 tiger_context *tiger_new();
 tiger_context *tiger_clone(const tiger_context *base_ctx);
+void tiger_init(tiger_context *ctx);
 void tiger_reset(tiger_context *ctx);
 void tiger_free(tiger_context *ctx);
 void tiger_feed(tiger_context *ctx, const void *block, size_t bytes_count);
 void tiger_finalize(tiger_context *ctx, void *hash);
-size_t tiger_context_size();
+
+const size_t tiger_context_size();
 
 #ifdef __cplusplus
 }

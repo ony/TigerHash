@@ -19,15 +19,11 @@
  -}
 
 {-# LANGUAGE BangPatterns #-}
-module Data.Digest.TigerHash (TigerHash, TigerHashable(..)) where
+module Data.Digest.TigerHash (TigerHash, TigerHashable(..), hexTigerHash, b32TigerHash) where
 import System.IO.Unsafe
 import Foreign.ForeignPtr
-import Foreign.Ptr
 
--- import Data.Word
--- import Data.Char
 import Text.Show
--- import Text.Read
 import Data.ByteString.Internal (inlinePerformIO)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Binary
@@ -39,48 +35,12 @@ import Control.Monad
 
 import Data.Digest.TigerHash.Internal
 
-{-
-showNetHex64 :: Word64 -> ShowS
-showNetHex64 = walk (8::Int) where
-    walk 0 _ r = r
-    walk p n r = c0 : c1 : walk (p-1) n' r where
-        (n',m) = n `quotRem` 0x100
-        (d0,d1) = m `quotRem` 0x10
-        c0 = intToDigit $ fromIntegral d0
-        c1 = intToDigit $ fromIntegral d1
-
-readNetHex64 :: ReadS Word64
-readNetHex64 = walk (8::Int) 0 where
-    walk 0 v r = [(v,r)]
-    walk _ _ [] = []
-    walk _ _ [_] = []
-    walk _ _ (c0:c1:_) | not (isHexDigit c0) || not (isHexDigit c1) = []
-    walk p v (c0:c1:r) = walk p' v' r where
-        d0 = fromIntegral $ digitToInt c0
-        d1 = fromIntegral $ digitToInt c1
-        v' = (d0 * 0x10 + d1) * 0x100^p' + v
-        p' = p-1;
-
+hexTigerHash, b32TigerHash :: TigerHash -> String
+hexTigerHash = B16.encode . LBS.unpack . runPut . put
+b32TigerHash = B32.encode . LBS.unpack . runPut . put
 
 instance Show TigerHash where
-    showsPrec _ (TigerHash a b c) = showNetHex64 a . showNetHex64 b . showNetHex64 c
-
-instance Read TigerHash where
-    readsPrec _ s = do
-        (a,s') <- readNetHex64 s
-        (b,s'') <- readNetHex64 s'
-        (c,s''') <- readNetHex64 s''
-        return (TigerHash a b c, s''')
--}
-
-instance Show TigerHash where
-    showsPrec _ th = (++) (B16.encode . LBS.unpack . runPut $ put th)
-
-{-
-instance Read TigerHash where
-    readsPrec _ s = do
-        B32.encode . LBS.unpack . runPut $ put th
--}
+    showsPrec _ th = (++) (b32TigerHash th)
 
 instance Binary TigerHash where
     put (TigerHash a b c) = putWord64host a >> putWord64host b >> putWord64host c
@@ -91,10 +51,15 @@ instance Binary TigerHash where
         return (TigerHash a b c)
 
 class TigerHashable a where
-    tigerHashUpdate :: Ptr StreamState -> a -> IO ()
+    tigerHashUpdate :: TigerContext c => c -> a -> IO ()
 
     tigerHash :: a -> TigerHash
-    tigerHash x = inlinePerformIO . withContext $ \ctx -> do
+    tigerHash x = inlinePerformIO . withTigerContext $ \ctx -> do
+        tigerHashUpdate ctx x
+        finalizeContext ctx
+
+    tigerTreeHash :: a -> TigerHash
+    tigerTreeHash x = inlinePerformIO . withTigerTreeContext $ \ctx -> do
         tigerHashUpdate ctx x
         finalizeContext ctx
 
@@ -103,18 +68,7 @@ class TigerHashable a where
     tigerHashList :: [a] -> [TigerHash]
     tigerHashList [] = []
     tigerHashList (x0:xs) = unsafePerformIO $ do
-        ctx <- newContext
-
-        {- we will not be so smart...
-        let mcomb x mys = unsafeInterleaveIO $ do -- list structure is lazy
-                y <- unsafeInterleaveIO $ do -- each element calculated on-demand
-                    resetContext ctx
-                    tigerHashUpdate ctx x
-                    finalizeContext ctx
-                liftM (y:) mys
-
-        foldr mcomb (return []) xs
-        -}
+        ctx <- newTigerContext
 
         let mcomb x mys = unsafeInterleaveIO $ do -- list structure is lazy
                 y <- withForeignPtr ctx $ \ctx_ -> do
@@ -132,5 +86,25 @@ class TigerHashable a where
 
     {-# NOINLINE tigerHashList #-}
 
+    tigerTreeHashList :: [a] -> [TigerHash]
+    tigerTreeHashList [] = []
+    tigerTreeHashList (x0:xs) = unsafePerformIO $ do
+        ctx <- newTigerTreeContext
+
+        let mcomb x mys = unsafeInterleaveIO $ do -- list structure is lazy
+                y <- withForeignPtr ctx $ \ctx_ -> do
+                    resetContext ctx_
+                    tigerHashUpdate ctx_ x
+                    finalizeContext ctx_
+                liftM (y:) mys
+
+        -- no need to resetContext after newContext
+        y0 <- withForeignPtr ctx $ \ctx_ -> do
+            tigerHashUpdate ctx_ x0
+            finalizeContext ctx_
+
+        liftM (y0:) $ foldr mcomb (return []) xs
+
+    {-# NOINLINE tigerTreeHashList #-}
 
 

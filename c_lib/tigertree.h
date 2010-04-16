@@ -37,7 +37,7 @@ void tigertree_feed(tigertree_context *ctx, const void *block, size_t bytes_coun
 void tigertree_finalize(tigertree_context *ctx, void *hash);
 void tigertree_reset(tigertree_context *ctx);
 
-extern const size_t tigertree_context_size;
+const size_t tigertree_context_size();
 tigertree_context *tigertree_new();
 void tigertree_free(tigertree_context *ctx);
 

@@ -7,7 +7,7 @@ Name:                TigerHash
 -- The package version. See the Haskell package versioning policy
 -- (http://www.haskell.org/haskellwiki/Package_versioning_policy) for
 -- standards guiding when and how versions should be incremented.
-Version:             0.1
+Version:             0.2
 
 -- A short (one-line) description of the package.
 Synopsis:            TigerHash C implementation
@@ -63,11 +63,14 @@ Library
   -- Packages needed in order to build this package.
   Build-depends: base,bytestring,binary,dataenc
 
-  Extensions: ForeignFunctionInterface,EmptyDataDecls,FlexibleInstances
+  Extensions: ForeignFunctionInterface,EmptyDataDecls,FlexibleInstances,FlexibleContexts,UndecidableInstances
 
-  C-Sources:	c_lib/tiger.c
   Include-Dirs:	c_lib
   Install-Includes:	tiger.h
+                    tigertree.h
+  C-Sources:	c_lib/tiger.c
+                c_lib/tigertree.c
+
 
   if flag(debug)
       GHC-Options: -debug -Wall -fno-warn-orphans
@@ -75,6 +78,8 @@ Library
       CC-Options: -DDEBUG -g
   else
       GHC-Options: -Wall -fno-warn-orphans
+      CPP-Options: -DNDEBUG
+      CC-Options: -DNDEBUG
 
   -- Modules not exported by this package.
   -- Other-modules:       

@@ -713,12 +713,16 @@ struct tiger_context_s {
     } pending;
 };
 
-size_t tiger_context_size() { return sizeof(tiger_context); }
+const size_t tiger_context_size() { return sizeof(tiger_context); }
+
+void tiger_init(tiger_context *ctx) {
+    return tiger_reset(ctx);
+}
 
 tiger_context *tiger_new() {
     /* XXX: maintain in sync with Data.Digest.TigerHash.Internal */
     tiger_context *ctx = (tiger_context*)malloc(sizeof(tiger_context));
-    tiger_reset(ctx);
+    tiger_init(ctx);
     return ctx;
 }
 
@@ -736,7 +740,7 @@ void tiger_reset(tiger_context *ctx) {
 }
 
 void tiger_free(tiger_context *ctx) {
-    free(ctx);
+    return free(ctx);
 }
 
 void tiger_feed(tiger_context *ctx, const void *block, size_t bytes_count)
