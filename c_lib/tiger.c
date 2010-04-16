@@ -40,7 +40,6 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
-#include <byteswap.h>
 
 #include "tiger.h"
 
@@ -726,12 +725,6 @@ tiger_context *tiger_new() {
     return ctx;
 }
 
-tiger_context *tiger_clone(const tiger_context *base_ctx) {
-    tiger_context *ctx = (tiger_context*)malloc(sizeof(tiger_context));
-    memcpy(ctx, base_ctx, sizeof(tiger_context));
-    return ctx;
-}
-
 void tiger_reset(tiger_context *ctx) {
     ctx->bytes = _ULL(0),
     ctx->a = INIT_A,
@@ -741,6 +734,21 @@ void tiger_reset(tiger_context *ctx) {
 
 void tiger_free(tiger_context *ctx) {
     return free(ctx);
+}
+
+static inline const uint64_t bswap_64(const uint64_t x)
+{
+    /* [0,8,16,24,32,40,48,56] */
+    return (
+      ((x & _ULL(0xff00000000000000)) >> 56) |
+      ((x & _ULL(0x00ff000000000000)) >> 40) |
+      ((x & _ULL(0x0000ff0000000000)) >> 24) |
+      ((x & _ULL(0x000000ff00000000)) >>  8) |
+      ((x & _ULL(0x00000000ff000000)) <<  8) |
+      ((x & _ULL(0x0000000000ff0000)) << 24) |
+      ((x & _ULL(0x000000000000ff00)) << 40) |
+      ((x & _ULL(0x00000000000000ff)) << 56)
+    );
 }
 
 void tiger_feed(tiger_context *ctx, const void *block, size_t bytes_count)

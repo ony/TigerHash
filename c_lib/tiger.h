@@ -34,7 +34,6 @@ extern "C" {
 #endif
 
 tiger_context *tiger_new();
-tiger_context *tiger_clone(const tiger_context *base_ctx);
 void tiger_init(tiger_context *ctx);
 void tiger_reset(tiger_context *ctx);
 void tiger_free(tiger_context *ctx);

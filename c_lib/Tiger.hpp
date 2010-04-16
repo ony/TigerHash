@@ -111,20 +111,16 @@ std::ostream &operator<<(std::ostream &s, const Hash<_bits> &hash)
 
 class Tiger {
     tiger_context *ctx;
+private:
+    Tiger(const Tiger &);
+    Tiger &operator=(const Tiger &base);
 public:
     enum { HASH_BITS = TIGER_HASH_BITS, HASH_SIZE = TIGER_HASH_SIZE };
 
     typedef Hash<HASH_BITS> hash_type;
 
     Tiger() : ctx(tiger_new()) {};
-    Tiger(const Tiger &base) : ctx(tiger_clone(base.ctx)) {};
     ~Tiger() { tiger_free(ctx); }
-
-    Tiger &operator=(const Tiger &base) {
-        tiger_free(ctx);
-        ctx = tiger_clone(base.ctx);
-        return (*this);
-    }
 
     void reset() { return tiger_reset(ctx); }
     void feed(const void *block, size_t bytes_count) { return tiger_feed(ctx, block, bytes_count); }
