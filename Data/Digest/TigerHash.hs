@@ -36,9 +36,10 @@
    > hashMessageSenders msgs = zip (tigerHashList senders) msgs
    >     where senders = map sender msgs
  
-   This can be used for building hashed storage, which requires to hash each element of the list.
-   Notice that while you expand each node of the least 'tigerHashList' will calculate it's @head@
-   for you. That's done with intention to loose maximum overhead while hashing files for DC++ .
+   This can be used for building hashed storage, which requires hash of each element.
+
+   Notice that while you expand each node of the list 'tigerHashList' will calculate it's @head@
+   for you. That's done with intention to loose overhead while hashing files for DC++ .
  -}
 module Data.Digest.TigerHash (TigerHash, TigerHashable(..), hexTigerHash, b32TigerHash) where
 import System.IO.Unsafe
