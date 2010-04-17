@@ -47,28 +47,31 @@ class TigerContext c where
     resetContext :: c -> IO ()
     finalizeContext :: c -> IO TigerHash
 
+
 newTigerContext :: IO (ForeignPtr TigerState)
-newTigerContext = do
-    ctx <- mallocBytes sizeofTigerContext >>= newForeignPtr finalizerFree
-    initContext ctx
-    return ctx
+newTigerContext = newTigerContext_ >>= newForeignPtr freeTigerContext_
 
 newTigerTreeContext :: IO (ForeignPtr TigerTreeState)
-newTigerTreeContext = do
-    ctx <- mallocBytes sizeofTigerTreeContext >>= newForeignPtr finalizerFree
-    initContext ctx
-    return ctx
+newTigerTreeContext = newTigerTreeContext_ >>= newForeignPtr freeTigerTreeContext_
 
 withTigerContext :: (Ptr TigerState -> IO a) -> IO a
-withTigerContext actions = allocaBytes sizeofTigerContext (\ctx_ -> initContext ctx_ >> actions ctx_)
+withTigerContext actions = allocaBytes sizeofTigerContext $ \ctx_ -> do
+    initTigerContext_ ctx_
+    r <- actions ctx_
+    doneTigerContext_ ctx_
+    return r
 
 withTigerTreeContext :: (Ptr TigerTreeState -> IO a) -> IO a
-withTigerTreeContext actions = allocaBytes sizeofTigerTreeContext (\ctx_ -> initContext ctx_ >> actions ctx_)
+withTigerTreeContext actions = allocaBytes sizeofTigerTreeContext $ \ctx_ -> do
+    initTigerTreeContext_ ctx_
+    r <- actions ctx_
+    doneTigerTreeContext_ ctx_
+    return r
 
 instance TigerContext (Ptr TigerState) where
-    initContext ctx_ = initTigerContext_ ctx_
+    initContext = initTigerContext_
     updateContext ctx_ p_ s = updateTigerContext_ ctx_ p_ (fromIntegral s)
-    resetContext ctx_ = resetTigerContext_ ctx_
+    resetContext = resetTigerContext_
     finalizeContext ctx_ = allocaArray 3 internal
         where
             internal p_ = do
@@ -79,9 +82,9 @@ instance TigerContext (Ptr TigerState) where
                 return (TigerHash a b c)
 
 instance TigerContext (Ptr TigerTreeState) where
-    initContext ctx_ = initTigerTreeContext_ ctx_
+    initContext = initTigerTreeContext_
     updateContext ctx_ p_ s = updateTigerTreeContext_ ctx_ p_ (fromIntegral s)
-    resetContext ctx_ = resetTigerTreeContext_ ctx_
+    resetContext = resetTigerTreeContext_
     finalizeContext ctx_ = allocaArray 3 internal
         where
             internal p_ = do
@@ -107,8 +110,9 @@ data TigerTreeState
 
 foreign import ccall unsafe "tiger.h tiger_context_size" sizeofTigerContext :: Int
 foreign import ccall unsafe "tiger.h tiger_init" initTigerContext_ :: Ptr TigerState -> IO ()
--- foreign import ccall unsafe "tiger.h tiger_new" newTigerContext_ :: IO (Ptr TigerState)
--- foreign import ccall unsafe "tiger.h &tiger_free" freeTigerContext_ :: FinalizerPtr TigerState
+foreign import ccall unsafe "tiger.h tiger_done" doneTigerContext_ :: Ptr TigerState -> IO ()
+foreign import ccall unsafe "tiger.h tiger_new" newTigerContext_ :: IO (Ptr TigerState)
+foreign import ccall unsafe "tiger.h &tiger_free" freeTigerContext_ :: FinalizerPtr TigerState
 
 foreign import ccall unsafe "tiger.h tiger_feed" updateTigerContext_ :: Ptr TigerState -> Ptr a -> CSize -> IO ()
 foreign import ccall unsafe "tiger.h tiger_finalize" finalizeTigerContext_ :: Ptr TigerState -> Ptr Word64 -> IO ()
@@ -118,8 +122,9 @@ foreign import ccall unsafe "tiger.h tiger_reset" resetTigerContext_ :: Ptr Tige
 
 foreign import ccall unsafe "tigertree.h tigertree_context_size" sizeofTigerTreeContext :: Int
 foreign import ccall unsafe "tigertree.h tigertree_init" initTigerTreeContext_ :: Ptr TigerTreeState -> IO ()
--- foreign import ccall unsafe "tigertree.h tigertree_new" newTigerTreeContext_ :: IO (Ptr TigerTreeState)
--- foreign import ccall unsafe "tigertree.h &tigertree_free" freeTigerTreeContext_ :: FinalizerPtr TigerTreeState
+foreign import ccall unsafe "tigertree.h tigertree_done" doneTigerTreeContext_ :: Ptr TigerTreeState -> IO ()
+foreign import ccall unsafe "tigertree.h tigertree_new" newTigerTreeContext_ :: IO (Ptr TigerTreeState)
+foreign import ccall unsafe "tigertree.h &tigertree_free" freeTigerTreeContext_ :: FinalizerPtr TigerTreeState
 
 foreign import ccall unsafe "tigertree.h tigertree_feed" updateTigerTreeContext_ :: Ptr TigerTreeState -> Ptr a -> CSize -> IO ()
 foreign import ccall unsafe "tigertree.h tigertree_finalize" finalizeTigerTreeContext_ :: Ptr TigerTreeState -> Ptr Word64 -> IO ()

@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 {- |
    Module      :  Data.Digest.TigerHash
    Copyright   :  (c) Orlyuk Nikolay 2010

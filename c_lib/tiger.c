@@ -718,6 +718,10 @@ void tiger_init(tiger_context *ctx) {
     return tiger_reset(ctx);
 }
 
+void tiger_done(tiger_context *ctx) {
+    /* do nothing at this moment */
+}
+
 tiger_context *tiger_new() {
     /* XXX: maintain in sync with Data.Digest.TigerHash.Internal */
     tiger_context *ctx = (tiger_context*)malloc(sizeof(tiger_context));
@@ -733,6 +737,7 @@ void tiger_reset(tiger_context *ctx) {
 }
 
 void tiger_free(tiger_context *ctx) {
+    tiger_done(ctx);
     return free(ctx);
 }
 

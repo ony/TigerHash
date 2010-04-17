@@ -43,7 +43,7 @@ iterations = 200000::Word32
 explodeBytes :: (Integral n, Bits n) => n -> [Word8]
 explodeBytes x = walk (bitSize x `div` 8) x where
     walk 0 _ = []
-    walk p x = (fromIntegral x : walk (p-1) (x `shiftR` 8))
+    walk p x = fromIntegral x : walk (p-1) (x `shiftR` 8)
 
 hash s = do
     let th = tigerHash (BC.pack s)
@@ -92,6 +92,6 @@ main = do
                       | otherwise = walk xs (r / 1024)
 
   let (hRate,hSym) = humanRate rate
-  printf "rate = %.3f %s/s\n" ((fromRational hRate)::Double) hSym
+  printf "rate = %.3f %s/s\n" (fromRational hRate :: Double) hSym
 
 

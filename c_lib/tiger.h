@@ -35,6 +35,7 @@ extern "C" {
 
 tiger_context *tiger_new();
 void tiger_init(tiger_context *ctx);
+void tiger_done(tiger_context *ctx);
 void tiger_reset(tiger_context *ctx);
 void tiger_free(tiger_context *ctx);
 void tiger_feed(tiger_context *ctx, const void *block, size_t bytes_count);

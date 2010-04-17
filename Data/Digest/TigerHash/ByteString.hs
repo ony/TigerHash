@@ -44,7 +44,7 @@ instance TigerHashable S.ByteString where
     {-# INLINE tigerHashUpdate #-}
 
 instance TigerHashable L.ByteString where
-    tigerHashUpdate ctx lbs = L.foldrChunks ((>>) . tigerHashUpdate ctx) (return ()) lbs
+    tigerHashUpdate ctx = L.foldrChunks ((>>) . tigerHashUpdate ctx) (return ())
     {-# INLINE tigerHashUpdate #-}
 
 instance TigerHashable [Word8] where

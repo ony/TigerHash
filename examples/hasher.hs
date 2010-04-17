@@ -49,10 +49,10 @@ traverse path = unsafeInterleaveIO $ do
 
 hash fn = B.readFile fn >>= putStr . flip (showsHash fn) [] . tigerTreeHash
 
-main_args :: [String] -> IO ()
-main_args [] = main_args ["-"]
-main_args ["-"] = B.getContents >>= putStr . flip (showsHash "-") [] . tigerTreeHash
-main_args args = do
+mainArgs :: [String] -> IO ()
+mainArgs [] = mainArgs ["-"]
+mainArgs ["-"] = B.getContents >>= putStr . flip (showsHash "-") [] . tigerTreeHash
+mainArgs args = do
     --process args
     filenamesA <- filterM (unsafeInterleaveIO . doesFileExist) args
     let dirnames = filter (`notElem` filenamesA) args
@@ -61,9 +61,9 @@ main_args args = do
 
     let printHash fn hash = putStr $ showsHash fn hash []
     let readFn fn = return . (,) fn =<< unsafeInterleaveIO (B.readFile fn)
-    contents <- mapM (readFn) filenames
+    contents <- mapM readFn filenames
     let hashes = uncurry zip (second tigerTreeHashList $ unzip contents)
     mapM_ (uncurry printHash) hashes
     
 
-main = getArgs >>= main_args . nub
+main = getArgs >>= mainArgs . nub
