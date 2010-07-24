@@ -51,41 +51,30 @@
 #define _ULL(c) (c ## ui64)
 #endif
 
+/* #define USE_LATEBSWAP */
+
 /* stdint.h gives __GLIBC__ */
 #if defined(__GLIBC__)
 
 #include <endian.h>
 #include <byteswap.h>
 
-#define bswap_u32(x) bswap_32(x);
 #define bswap_u64(x) bswap_64(x);
 
 #elif defined(WIN32) || defined(_WIN32)
 
-#define bswap_u32(x) _byteswap_ulong(x)
 #define bswap_u64(x) _byteswap_uint64(x)
 
 #elif defined(__APPLE__)
 
-#define bswap_u32(x) __builtin_bswap32(x)
 #define bswap_u64(x) __builtin_bswap64(x)
 
 #else
 /* slow but compatible implementation (llvm will guess it) */
-
-static inline uint32_t bswap_u16(uint32_t x)
-{
-    return (
-      ((x & 0xff000000) >> 24) |
-      ((x & 0x00ff0000) >>  8) |
-      ((x & 0x0000ff00) <<  8) |
-      ((x & 0x000000ff) << 24)
-    );
-}
+#warning "Using slow bswap_u64"
 
 static inline uint64_t bswap_u64(uint64_t x)
 {
-    /* [0,8,16,24,32,40,48,56] */
     return (
       ((x & _ULL(0xff00000000000000)) >> 56) |
       ((x & _ULL(0x00ff000000000000)) >> 40) |
@@ -207,15 +196,7 @@ static inline uint64_t bswap_u64(uint64_t x)
 	feedforward
 #endif
 
-#ifdef TIGER_BIG_ENDIAN
-#define tiger_ntohl(a) (bswap_u64((a)))
-#define tiger_htonl(a) (bswap_u64((a)))
-#else
-#define tiger_ntohl(a) (a)
-#define tiger_htonl(a) (a)
-#endif
-
-#ifdef USE_NTOH
+#if defined(TIGER_BIG_ENDIAN) && defined(USE_LATEBSWAP)
 #define tiger_compress_macro(str, va, vb, vc) \
 { \
 	uint64_t a, b, c, tmpa; \
@@ -227,8 +208,8 @@ static inline uint64_t bswap_u64(uint64_t x)
 	b = (vb); \
 	c = (vc); \
 	\
-	x0=tiger_ntohl((str)[0]); x1=tiger_ntohl((str)[1]); x2=tiger_ntohl((str)[2]); x3=tiger_ntohl((str)[3]); \
-	x4=tiger_ntohl((str)[4]); x5=tiger_ntohl((str)[5]); x6=tiger_ntohl((str)[6]); x7=tiger_ntohl((str)[7]); \
+	x0=bswap_u64((str)[0]); x1=bswap_u64((str)[1]); x2=bswap_u64((str)[2]); x3=bswap_u64((str)[3]); \
+	x4=bswap_u64((str)[4]); x5=bswap_u64((str)[5]); x6=bswap_u64((str)[6]); x7=bswap_u64((str)[7]); \
 	\
 	compress; \
 	\
@@ -248,8 +229,8 @@ static inline uint64_t bswap_u64(uint64_t x)
 	b = (vb); \
 	c = (vc); \
 	\
-	x0=tiger_ntohl((str)[0]); x1=tiger_ntohl((str)[1]); x2=tiger_ntohl((str)[2]); x3=tiger_ntohl((str)[3]); \
-	x4=tiger_ntohl((str)[4]); x5=tiger_ntohl((str)[5]); x6=tiger_ntohl((str)[6]); x7=tiger_ntohl((str)[7]); \
+	x0=(str)[0]; x1=(str)[1]; x2=(str)[2]; x3=(str)[3]; \
+	x4=(str)[4]; x5=(str)[5]; x6=(str)[6]; x7=(str)[7]; \
 	\
 	compress; \
 	\
@@ -822,115 +803,98 @@ void tiger_free(tiger_context *ctx) {
     return free(ctx);
 }
 
+/*
+ * In Tiger all the computations are on 64-bit words, in little-endian/2-complement representation.
+ */
+
+static void tiger_next_block_le(tiger_context *ctx, const uint64_t *block);
+
+#if defined(TIGER_BIG_ENDIAN) && defined(USE_LATEBSWAP)
+#define tiger_next_block_host \
+    #error "Should never use tiger_next_block_host when USE_LATEBSWAP enabled" \
+
+
+#else
+static void tiger_next_block_host(tiger_context *ctx, const uint64_t *block)
+{
+    tiger_compress_macro(block, ctx->a, ctx->b, ctx->c);
+}
+
+#endif
+
 static void tiger_next_pending(tiger_context *ctx)
 {
-#if defined(USE_HOSTBUF) && defined(USE_NTOH)
-#  error "Wrong combination of flags: USE_HOSTBUF=true and USE_NTOH=true"
+#if defined(TIGER_BIG_ENDIAN) && defined(USE_LATEBSWAP)
+    return tiger_next_block_le(ctx, ctx->pending.words);
 
-#elif (defined(USE_HOSTBUF) && !defined(USE_NTOH)) || (!defined(USE_HOSTBUF) && defined(USE_NTOH))
-    tiger_compress_macro(ctx->pending.words, ctx->a, ctx->b, ctx->c);
-
-#elif !defined(USE_HOSTBUF) && !defined(USE_NTOH)
-#  ifdef TIGER_BIG_ENDIAN
-    size_t i;
-    for(i=0;i<TIGER_BLOCK_WSIZE;++i)
-        ctx->pending.words[i] = bswap_u64(ctx->pending.words[i]);
-#  endif
-    tiger_compress_macro(ctx->pending.words, ctx->a, ctx->b, ctx->c);
 #else
-#  error "Unsupported combination of flags USE_HOSTBUF and USE_NTOH"
+    /* our pending block is already in host format */
+    return tiger_next_block_host(ctx, ctx->pending.words);
 
 #endif
 }
 
-static void *tiger_copy_pending(tiger_context *ctx, size_t pending_bytes, const void *block, size_t bytes_count)
+static void *tiger_copy_pending(tiger_context *ctx, size_t pending_bytes, const void *buffer, size_t bytes_count)
 {
-#if defined(USE_HOSTBUF) && defined(TIGER_BIG_ENDIAN)
-    const char * const src = (const char*)block;
+#if defined(TIGER_BIG_ENDIAN) && !defined(USE_LATEBSWAP)
+    /* fill pending block in host format from little-endian buffer */
+    const char * const src = (const char*)buffer;
     size_t i;
     for(i=0; i<bytes_count; ++i)
         ctx->pending.bytes[(pending_bytes+i)^7] = src[i];
-    return ctx;
+    return ctx->pending.bytes;
+
 #else
-    return memcpy(ctx->pending.bytes + pending_bytes, block, bytes_count);
+    return memcpy(ctx->pending.bytes + pending_bytes, buffer, bytes_count);
 #endif
 }
 
-static void tiger_next_host(tiger_context *ctx, const uint64_t *block)
+static void tiger_next_block_le(tiger_context *ctx, const uint64_t *block)
 {
-#if !defined(USE_NTOH) || defined(TIGER_BIG_ENDIAN)
-    tiger_compress_macro(block, ctx->a, ctx->b, ctx->c);
-#else
-    tiger_copy_pending(ctx, 0, block, TIGER_BLOCK_SIZE);
-    tiger_next_pending(ctx);
-#endif
-}
+#ifdef TIGER_BIG_ENDIAN
 
-static void tiger_next_net(tiger_context *ctx, const uint64_t *block)
-{
-#if defined(USE_NTOH) || !defined(TIGER_BIG_ENDIAN)
+#  ifdef USE_LATEBSWAP
+    /* tiger_compress_macro handles BE */
     tiger_compress_macro(block, ctx->a, ctx->b, ctx->c);
-#else
+#  else
+    /* convert to host (BE) through pending block */ 
     tiger_copy_pending(ctx, 0, block, TIGER_BLOCK_SIZE);
     return tiger_next_pending(ctx);
+#  endif
+
+#else
+    /* host is little-endian */
+    return tiger_next_block_host(ctx, block);
 #endif
 }
+
 
 void tiger_feed(tiger_context *ctx, const void *block, size_t bytes_count)
 {
     const size_t pending_bytes = ctx->bytes % TIGER_BLOCK_SIZE;
-/*
-#ifdef TIGER_BIG_ENDIAN
-    size_t i;
-#endif
-*/
-    //assert( !(bits_count % 8) || !"implemented yet" );
 
-    // if ((pending_bytes > 0) || (bytes_count < TIGER_BLOCK_SIZE)) {
     if (pending_bytes > 0) {
         const size_t align_bytes = TIGER_BLOCK_SIZE-pending_bytes;
         if (align_bytes > bytes_count) {
-            //memcpy(ctx->pending.bytes + pending_bytes, block, bytes_count);
             tiger_copy_pending(ctx, pending_bytes, block, bytes_count);
             ctx->bytes += bytes_count;
             return;
         }
-        //memcpy(ctx->pending.bytes + pending_bytes, block, align_bytes);
         tiger_copy_pending(ctx, pending_bytes, block, align_bytes);
         ctx->bytes += align_bytes;
         block = (const uint8_t*)block + align_bytes;
         bytes_count -= align_bytes;
-/*
-#ifdef TIGER_BIG_ENDIAN
-        for(i=0;i<TIGER_BLOCK_WSIZE;++i)
-            ctx->pending.words[i] = bswap_u64(ctx->pending.words[i]);
-#endif
-*/
-        // tiger_compress_macro(ctx->pending.words, ctx->a, ctx->b, ctx->c);
-        // tiger_next(ctx, ctx->pending.words);
         tiger_next_pending(ctx);
     }
 
     ctx->bytes += bytes_count;
 
     while( bytes_count >= TIGER_BLOCK_SIZE )  {
-/*
-#ifdef TIGER_BIG_ENDIAN
-        for(i=0;i<TIGER_BLOCK_SIZE;++i)
-            ctx->pending.bytes[i^7] = ((const uint8_t*)block)[i];
-        tiger_compress_macro(ctx->pending.words, ctx->a, ctx->b, ctx->c);
-#else
-        tiger_compress_macro((const uint64_t*)block, ctx->a, ctx->b, ctx->c);
-#endif
-*/
-        // tiger_compress_macro((const uint64_t*)block, ctx->a, ctx->b, ctx->c);
-        //tiger_next(ctx, (const uint64_t*)block);
-        tiger_next_net(ctx, block);
+        tiger_next_block_le(ctx, block);
         block = (const uint8_t*)block + TIGER_BLOCK_SIZE,
         bytes_count -= TIGER_BLOCK_SIZE;
     }
 
-    // memcpy(ctx->pending.bytes, block, bytes_count);
     tiger_copy_pending(ctx, 0, block, bytes_count);
 }
 
@@ -938,50 +902,7 @@ void tiger_finalize(tiger_context *ctx, void *hash) {
     const size_t pending_bytes = ctx->bytes % TIGER_BLOCK_SIZE;
     uint64_t * const res = hash;
 
-    /*
-    res[0] = ctx->a,
-    res[1] = ctx->b,
-    res[2] = ctx->c;
-    */
-
-
-#if 0
-    {
-        union {
-            uint64_t words[TIGER_BLOCK_WSIZE];
-            uint8_t bytes[TIGER_BLOCK_SIZE];
-        } buf;
-
-        memcpy(buf.bytes, ctx->pending.bytes, pending_bytes);
-        buf.bytes[pending_bytes] = 0x01;
-        if ((pending_bytes + 1 + 8) > TIGER_BLOCK_SIZE) {
-            memset(buf.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
-            tiger_compress_macro(buf.words, res[0], res[1], res[2]);
-            memset(buf.bytes, 0, pending_bytes + 1);
-        }
-        else
-        {
-            memset(buf.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1 - 8);
-        }
-        buf.words[7] = ctx->bytes*8;
-        tiger_compress_macro(buf.words, res[0], res[1], res[2]);
-    }
-#endif
-#if !defined(USE_HOSTBUF) || !defined(TIGER_BIG_ENDIAN)
-    ctx->pending.bytes[pending_bytes] = 0x01;
-    if ((pending_bytes + 1 + 8) > TIGER_BLOCK_SIZE) {
-        memset(ctx->pending.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
-        // tiger_compress_macro(ctx->pending.words, res[0], res[1], res[2]);
-        tiger_next_pending(ctx);
-        memset(ctx->pending.bytes, 0, pending_bytes + 1);
-    }
-    else {
-        memset(ctx->pending.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1 - 8);
-    }
-    ctx->pending.words[7] = ctx->bytes*8;
-    //tiger_compress_macro(ctx->pending.words, res[0], res[1], res[2]);
-    tiger_next_pending(ctx);
-#elif defined(USE_HOSTBUF) && !defined(USE_NTOH)
+#if defined(TIGER_BIG_ENDIAN) && !defined(USE_LATEBSWAP)
     ctx->pending.bytes[pending_bytes ^ 7] = 0x01;
     if ((pending_bytes + 1 + 8) > TIGER_BLOCK_SIZE) {
         size_t i = pending_bytes + 1;
@@ -995,54 +916,37 @@ void tiger_finalize(tiger_context *ctx, void *hash) {
         for(; (i < (TIGER_BLOCK_SIZE-8)) && ((i & 7) != 0); ++i) ctx->pending.bytes[i^7] = 0;
         memset(ctx->pending.bytes + i, 0, TIGER_BLOCK_SIZE - i - 8);
     }
-    ctx->pending.words[7] = tiger_ntohl(ctx->bytes*8);
+    ctx->pending.words[7] = bswap_u64(ctx->bytes*8); /* to little endian */
     tiger_next_pending(ctx);
+
 #else
-#  error "What?"
+    ctx->pending.bytes[pending_bytes] = 0x01;
+    if ((pending_bytes + 1 + 8) > TIGER_BLOCK_SIZE) {
+        memset(ctx->pending.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
+        tiger_next_pending(ctx);
+        memset(ctx->pending.bytes, 0, pending_bytes + 1);
+    }
+    else {
+        memset(ctx->pending.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1 - 8);
+    }
+    ctx->pending.words[7] = ctx->bytes*8;
+    tiger_next_pending(ctx);
+
 #endif
 
+#ifdef TIGER_BIG_ENDIAN
+    /* to little-endian */
+    res[0] = bswap_u64(ctx->a);
+    res[1] = bswap_u64(ctx->b);
+    res[2] = bswap_u64(ctx->c);
+
+#else
     res[0] = ctx->a;
     res[1] = ctx->b;
     res[2] = ctx->c;
 
+#endif
 
-#if 0
-#ifndef TIGER_BIG_ENDIAN
-    /* inplace */
-    if( (pending_bytes + 1 + 8) < TIGER_BLOCK_SIZE) {
-        ctx->pending.bytes[pending_bytes] = 0x01;
-        memset(ctx->pending.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
-        ctx->pending.words[7] = ctx->bytes * 8;
-        tiger_compress_macro(ctx->pending.words, res[0], res[1], res[2]);
-    } else
-#endif
-    {
-        union {
-            uint64_t words[TIGER_BLOCK_WSIZE];
-            uint8_t bytes[TIGER_BLOCK_SIZE];
-        } buf;
-#ifdef TIGER_BIG_ENDIAN
-        size_t i;
-#endif
-        memcpy(buf.bytes, ctx->pending.bytes, pending_bytes);
-        buf.bytes[pending_bytes] = 0x01;
-        memset(buf.bytes + pending_bytes + 1, 0, TIGER_BLOCK_SIZE - pending_bytes - 1);
-        if ((pending_bytes + 1 + 8) > TIGER_BLOCK_SIZE) {
-#ifdef TIGER_BIG_ENDIAN
-            for(i=0;i<TIGER_BLOCK_WSIZE;++i)
-                buf.words[i] = bswap_u64(buf.words[i]);
-#endif
-            tiger_compress_macro(buf.words, res[0], res[1], res[2]);
-            memset(buf.bytes, 0, pending_bytes + 1);
-        }
-        buf.words[7] = ctx->bytes*8;
-#ifdef TIGER_BIG_ENDIAN
-        for(i=0;i<TIGER_BLOCK_WSIZE;++i)
-            buf.words[i] = bswap_u64(buf.words[i]);
-#endif
-        tiger_compress_macro(buf.words, res[0], res[1], res[2]);
-    }
-#endif
 }
 
 /**********************************************/

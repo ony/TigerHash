@@ -39,7 +39,7 @@ void tiger_done(tiger_context *ctx);
 void tiger_reset(tiger_context *ctx);
 void tiger_free(tiger_context *ctx);
 void tiger_feed(tiger_context *ctx, const void *block, size_t bytes_count);
-void tiger_finalize(tiger_context *ctx, void *hash);
+void tiger_finalize(tiger_context *ctx, void *hash); /* context is not valid after finalize */
 
 const size_t tiger_context_size();
 
